@@ -1781,8 +1781,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.on_generate_open_folder(on_window!(|state| {
         state.handle(Msg::Generate(GenerateMsg::OpenFolder));
     }));
-    app.on_generate_make_short(on_window!(|state| {
-        state.handle(Msg::Generate(GenerateMsg::Short));
+    app.on_generate_make_short(on_window!(|state, index: i32| {
+        state.handle(Msg::Generate(GenerateMsg::MakeShort(index)));
+    }));
+    app.on_generate_open_short(on_window!(|state, index: i32| {
+        state.handle(Msg::Generate(GenerateMsg::OpenShort(index)));
+    }));
+    app.on_generate_open_video(on_window!(|state| {
+        state.handle(Msg::Generate(GenerateMsg::OpenVideo));
     }));
     app.on_generate_act(on_window!(|state, kind: i32| {
         state.handle(Msg::Generate(GenerateMsg::Act(kind)));
