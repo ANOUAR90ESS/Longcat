@@ -32,6 +32,15 @@ export struct NicheRow {
     videos: string,
 }
 
+/// A video of the channel's plan.
+export struct PlanRow {
+    /// "Day 4", in words.
+    day: string,
+    title: string,
+    angle: string,
+    made: bool,
+}
+
 /// One Short of the video's results.
 export struct ShortResult {
     title: string,
@@ -195,6 +204,11 @@ export struct GenerateSheetData {
     niches: [NicheRow],
     /// The channel's look: its words (tagline, page description, thumbnail
     /// style), its colours, its logo and its banner; empty until designed.
+    /// The channel's plan: how many long videos a week (a row of 1, 2, 3,
+    /// 5), what it would cost, and its videos.
+    plan-per-week: int,
+    plan-cost: string,
+    plan: [PlanRow],
     look-words: string,
     look-colours: string,
     look-logo: image,
@@ -339,7 +353,8 @@ export component GenerateDialog inherits Modal {
     /// Which choice: 0 minutes, 1 language, 2 aspect, 3 voice, 4 shots,
     /// 5 music, 6 clips, 7 caption look, 8 content style, 9 picture quality,
     /// 10 audience level, 11 visuals (pictures and cards, or cards only),
-    /// 24 the picture model, from the list the key can run.
+    /// 24 the picture model, from the list the key can run, 25 how many
+    /// long videos a week the channel's plan holds.
     callback choice-changed(field: int, index: int);
     /// Which switch: 0 captions, 1 titles, 2 export when done, 3 research
     /// on the web.
@@ -355,11 +370,14 @@ export component GenerateDialog inherits Modal {
     callback open-video();
     /// Use niche `index`: a channel of its own, picked.
     callback choose-niche(index: int);
+    /// Make video `index` of the channel's plan next.
+    callback use-planned(index: int);
     /// One of the sheet's buttons: 0 suggest ideas, 1 make every idea,
     /// 2 make the video in another language, 3 save the choices as a
     /// series, 4 pick the video's Shorts, 5 research first, 6 export
     /// everything, 7 check before publishing, 8 suggest niches, 9 show or
-    /// hide finding a niche, 10 design the channel's look.
+    /// hide finding a niche, 10 design the channel's look, 11 plan its
+    /// next thirty days.
     callback act(kind: int);
     callback publish();
     callback cancel();
@@ -1339,6 +1357,69 @@ export component GenerateDialog inherits Modal {
                             text: root.data.look-words;
                             font-size: Theme.fs-sm;
                             wrap: word-wrap;
+                        }
+
+                        // The channel's next thirty days: long videos in
+                        // order, each on its day, none made before, the
+                        // whole plan's cost said before any is made.
+                        DialogRow {
+                            label: I18n.t("generate.planPerWeek");
+                            Select {
+                                options: ["1", "2", "3", "5"];
+                                current: root.data.plan-per-week;
+                                changed(index) => { root.choice-changed(25, index); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.plan-cost;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: root.data.plan.length > 0 ? I18n.t("generate.planAgain") : I18n.t("generate.planMonth");
+                                glyph: Glyph.sparkle;
+                                clicked => { root.act(11); }
+                            }
+                        }
+
+                        for entry[index] in root.data.plan: HorizontalLayout {
+                            spacing: 8px;
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+
+                                Text {
+                                    text: entry.day + " · " + entry.title;
+                                    color: entry.made ? Theme.fg-dim : Theme.fg;
+                                    wrap: word-wrap;
+                                }
+
+                                if entry.angle != "": Text {
+                                    text: entry.angle;
+                                    color: Theme.fg-dim;
+                                    font-size: Theme.fs-sm;
+                                    wrap: word-wrap;
+                                }
+                            }
+
+                            if entry.made: Text {
+                                text: "✓";
+                                color: Theme.accent;
+                                vertical-alignment: center;
+                            }
+
+                            if !entry.made: Button {
+                                label: I18n.t("generate.makeThis");
+                                ghost: true;
+                                clicked => { root.use-planned(index); }
+                            }
                         }
 
                         HorizontalLayout {

@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use concat_generate::budget::{self, Totals};
+use concat_generate::calendar;
 use concat_generate::checklist;
 use concat_generate::cost::{self, Estimate, Prices};
 use concat_generate::identity;
@@ -46,7 +47,7 @@ use crate::panes::Msg;
 use crate::panes::export::ExportMsg;
 use crate::panes::settings::installed;
 use crate::studio::Studio;
-use crate::ui::{GenerateSheetData, NicheRow, ScriptRow, ScriptSheetData, ShortResult};
+use crate::ui::{GenerateSheetData, NicheRow, PlanRow, ScriptRow, ScriptSheetData, ShortResult};
 
 /// The lengths offered, in minutes, row for row with the sheet's list.
 const MINUTES: [f64; 8] = [1.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 60.0];
@@ -170,6 +171,10 @@ pub enum GenerateMsg {
     /// The channel's look designed, its logo and banner drawn when a
     /// picture maker is chosen (else why not), or why there is none.
     Looked(Box<Result<Look, String>>),
+    /// The channel's month planned, or why not.
+    Planned(Box<Result<calendar::Calendar, String>>),
+    /// Make video `n` of the channel's plan next: its title the idea.
+    UsePlanned(i32),
     /// Use niche `n` of those proposed: a channel of its own, picked.
     ChooseNiche(i32),
     /// The niches proposed, or why there are none.
@@ -228,6 +233,8 @@ pub struct GeneratePane {
     /// The channel's logo and banner as the sheet shows them: loaded once
     /// as the sheet opens or the look is drawn, not at every redraw.
     look_pictures: (slint::Image, slint::Image),
+    /// The channel's plan, as kept with it.
+    calendar: Option<calendar::Calendar>,
     niche_interests: String,
     niches: Vec<niche::Niche>,
     /// The ideas still to make, in a batch; the one being made is not
@@ -339,6 +346,7 @@ impl Default for GeneratePane {
             ideas: Vec::new(),
             niche_open: false,
             look_pictures: Default::default(),
+            calendar: None,
             niche_interests: String::new(),
             niches: Vec::new(),
             queue: Vec::new(),
@@ -610,6 +618,7 @@ impl GeneratePane {
                     }
                     10 => prefs.level = Some(index.min(Level::ALL.len() - 1)),
                     22 => prefs.shorts_count = Some(index.min(4) + 1),
+                    25 => prefs.plan_per_week = Some(index.min(calendar::PER_WEEK.len() - 1)),
                     23 => prefs.writer = index.min(1),
                     20 => {
                         prefs.picture_maker = index.min(2);
@@ -838,6 +847,7 @@ impl GeneratePane {
                 6 => self.export_all(studio),
                 8 => self.find_niches(studio),
                 10 => self.design_look(studio),
+                11 => self.plan_month(studio),
                 9 => self.niche_open = !self.niche_open,
                 7 => {
                     let found = self.check_before_publishing(studio);
@@ -857,6 +867,35 @@ impl GeneratePane {
                 }
             }
             GenerateMsg::ChooseNiche(index) => self.choose_niche(studio, index.max(0) as usize),
+            GenerateMsg::Planned(result) => {
+                self.running = false;
+                match *result {
+                    Ok(calendar) => {
+                        let dir = identity::folder(
+                            &studio.host.dirs.data,
+                            &studio.prefs.generate.channel_name,
+                        );
+                        if let Err(error) = calendar.keep(&dir) {
+                            log::warn!("generate: the channel's plan: {error}");
+                        }
+                        self.calendar = Some(calendar);
+                    }
+                    Err(error) => self.failed(error),
+                }
+            }
+            GenerateMsg::UsePlanned(index) => {
+                let title = self
+                    .calendar
+                    .as_ref()
+                    .and_then(|calendar| calendar.entries.get(index.max(0) as usize))
+                    .map(|entry| entry.title.clone());
+                if let Some(title) = title {
+                    self.keep(studio);
+                    self.topic = title;
+                    self.notes.clear();
+                    self.look(studio);
+                }
+            }
             GenerateMsg::Looked(result) => {
                 self.running = false;
                 match *result {
@@ -1096,6 +1135,18 @@ impl GeneratePane {
                         // this one was made.
                         studio.prefs.generate.remember(&board.title);
                         studio.prefs.save(&studio.host.dirs);
+                        // A video of the channel's plan, made: marked so.
+                        if let Some(calendar) = self.calendar.as_mut()
+                            && calendar.mark_made(&self.topic)
+                        {
+                            let dir = identity::folder(
+                                &studio.host.dirs.data,
+                                &studio.prefs.generate.channel_name,
+                            );
+                            if let Err(error) = calendar.keep(&dir) {
+                                log::warn!("generate: the channel's plan: {error}");
+                            }
+                        }
                         // The research it was written from, kept with it.
                         if let Some(job) = self.job(studio) {
                             self.research = job.research();
@@ -2725,18 +2776,7 @@ impl GeneratePane {
             self.message = need_writer_key(&prefs);
             return;
         }
-        let channel = [
-            ("Channel", &prefs.channel_name),
-            ("Who watches", &prefs.channel_audience),
-            ("How it sounds", &prefs.channel_voice),
-            ("What it covers", &prefs.channel_topics),
-            ("Rules", &prefs.channel_rules),
-        ]
-        .iter()
-        .filter(|(_, value)| !value.trim().is_empty())
-        .map(|(label, value)| format!("{label}: {}", value.trim()))
-        .collect::<Vec<_>>()
-        .join("\n");
+        let channel = channel_text(&prefs);
         let language = LANGUAGES[prefs.language.min(LANGUAGES.len() - 1)];
         let dir = identity::folder(&studio.host.dirs.data, &prefs.channel_name);
         let pictures = match shots_of(&prefs) {
@@ -2758,6 +2798,41 @@ impl GeneratePane {
                 studio.handle(Msg::Generate(GenerateMsg::Looked(Box::new(result))))
             },
         );
+    }
+
+    /// Plans the channel's next thirty days on a worker: as many long
+    /// videos as the week's number makes, none made before.
+    fn plan_month(&mut self, studio: &mut Studio) {
+        let prefs = studio.prefs.generate.clone();
+        let (key, model) = prefs.writer();
+        if key.trim().is_empty() {
+            self.message = need_writer_key(&prefs);
+            return;
+        }
+        let channel = channel_text(&prefs);
+        let language = LANGUAGES[prefs.language.min(LANGUAGES.len() - 1)];
+        let made: Vec<String> = prefs.made_before().to_vec();
+        let per_week = calendar::PER_WEEK[per_week_row(&prefs)];
+        self.begin(t("generate.planBusy"));
+        self.phase = 0;
+        spawn_in_project(
+            move || calendar::plan(&channel, language, &made, per_week, &key, &model),
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::Planned(Box::new(result))))
+            },
+        );
+    }
+
+    /// What the plan of the week's number would cost, at the sheet's
+    /// choices as they are now: the videos, one's cost, and all of them.
+    fn plan_cost(&self, studio: &Studio) -> String {
+        let prefs = &studio.prefs.generate;
+        let count = calendar::Calendar::count_for(calendar::PER_WEEK[per_week_row(prefs)]);
+        let one = self.estimate(studio).total();
+        tf(
+            "generate.planCost",
+            &[&count, &dollars(one), &dollars(one * count as f64)],
+        )
     }
 
     /// Keeps the channel's look: its colours and words in the channel's
@@ -2806,6 +2881,10 @@ impl GeneratePane {
         };
         let prefs = &studio.prefs.generate;
         self.look_pictures = (load(&prefs.brand_logo), load(&prefs.brand_banner));
+        // The channel's plan is kept beside its look.
+        self.calendar = (!prefs.channel_name.trim().is_empty())
+            .then(|| identity::folder(&studio.host.dirs.data, &prefs.channel_name))
+            .and_then(|dir| calendar::Calendar::read(&dir));
     }
 
     /// The niches proposed, as the sheet lists them.
@@ -3574,6 +3653,21 @@ impl GeneratePane {
                 .collect::<Vec<_>>()
                 .join(" · ")
                 .into(),
+            plan_per_week: per_week_row(prefs) as i32,
+            plan_cost: self.plan_cost(studio).into(),
+            plan: std::rc::Rc::new(slint::VecModel::from(
+                self.calendar
+                    .iter()
+                    .flat_map(|calendar| &calendar.entries)
+                    .map(|entry| PlanRow {
+                        day: tf("generate.planDay", &[&entry.day]).into(),
+                        title: entry.title.as_str().into(),
+                        angle: entry.angle.as_str().into(),
+                        made: entry.made,
+                    })
+                    .collect::<Vec<_>>(),
+            ))
+            .into(),
             look_logo: self.look_pictures.0.clone(),
             look_banner: self.look_pictures.1.clone(),
             niche_interests: self.niche_interests.as_str().into(),
@@ -4099,6 +4193,33 @@ fn brand_of(prefs: &crate::prefs::GeneratePrefs) -> Option<concat_generate::job:
             colour: prefs.brand_color.trim().to_owned(),
         }
     })
+}
+
+/// The row of `calendar::PER_WEEK` the plan holds: three a week unless
+/// chosen.
+fn per_week_row(prefs: &crate::prefs::GeneratePrefs) -> usize {
+    prefs
+        .plan_per_week
+        .unwrap_or(2)
+        .min(concat_generate::calendar::PER_WEEK.len() - 1)
+}
+
+/// The channel in use as the writer is told it when designing or planning
+/// for it: the fields filled in, a line each.
+fn channel_text(prefs: &crate::prefs::GeneratePrefs) -> String {
+    [
+        ("Channel", &prefs.channel_name),
+        ("Tagline", &prefs.channel_tagline),
+        ("Who watches", &prefs.channel_audience),
+        ("How it sounds", &prefs.channel_voice),
+        ("What it covers", &prefs.channel_topics),
+        ("Rules", &prefs.channel_rules),
+    ]
+    .iter()
+    .filter(|(_, value)| !value.trim().is_empty())
+    .map(|(label, value)| format!("{label}: {}", value.trim()))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// A channel's look as designed, and its logo and banner as drawn - or

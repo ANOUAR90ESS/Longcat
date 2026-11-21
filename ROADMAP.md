@@ -741,8 +741,15 @@ cost is shown before, and the person decides.
    under the app's data. The colour becomes the videos' accent, the logo
    their corner mark, and the thumbnail style is added to every
    thumbnail's prompt; all of it is kept with the channel.
-3. **A plan of 30 days**: long videos and Shorts in order, each with its
-   angle, none made before; the cost of the whole plan shown first.
+3. **A plan of 30 days** - done. In the Channel section: how many long
+   videos a week (1, 2, 3 or 5), the whole plan's cost at the sheet's
+   choices said before anything is made, and "Plan the next 30 days"
+   (`concat_generate::calendar`): the writer plans that many long videos
+   in order, spread over the month from day 1, none made before (the
+   channel's memory), each with why a viewer clicks. Each long video gives
+   its four Shorts from the results, so the plan is of long videos only.
+   Kept in the channel's folder; "Make this" makes a video the idea, and
+   a video of the plan written is marked made.
 4. **Making it**: the plan's videos made one after another, each to look
    over before it goes up.
 5. **Publishing**: YouTube's upload through the person's own Google

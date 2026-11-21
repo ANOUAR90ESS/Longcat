@@ -435,6 +435,9 @@ pub struct GeneratePrefs {
     /// The channel's editorial rules, as typed: what every script keeps
     /// to.
     pub channel_rules: String,
+    /// How many long videos a week the channel's plan holds: a row of
+    /// `calendar::PER_WEEK`; three a week unless chosen.
+    pub plan_per_week: Option<usize>,
     /// How many Shorts are cut from a video, one to five; three unless
     /// chosen.
     pub shorts_count: Option<usize>,
