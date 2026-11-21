@@ -1,0 +1,1743 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+
+import { I18n } from "../i18n.slint";
+import { Theme } from "../theme/theme.slint";
+import { Glyph, Icon } from "../icons.slint";
+import { Button, CopyChip, DialogRow, DialogSection, Field, Modal, Progress } from "../primitives/modal.slint";
+import { SegmentedControl } from "../primitives/segmented-control.slint";
+import { Select } from "../primitives/select.slint";
+import { Switch } from "../inspector/controls.slint";
+import { ProgressRing } from "export.slint";
+
+// Long video: what the menu's Long video opens.
+//
+// An idea in, a cut timeline out. The sheet is the whole job, top to
+// bottom: the idea and how long; who reads it; where the shots come from;
+// the house style of the cut; the keys the services take. Then two
+// buttons. Write script asks Claude for the storyboard and stops there, so
+// it can be read - and edited, it is a file in the project folder - before
+// a single shot is paid for. Create video does whatever is still missing,
+// the script included, then lays the cut on a new timeline. While it runs
+// the sheet is its progress report, as the speech sheets are.
+
+export struct GenerateSheetData {
+    open: bool,
+    /// The idea, in the person's words.
+    topic: string,
+    /// Audience, tone, must-haves.
+    notes: string,
+    /// Row of the minutes list.
+    minutes: int,
+    /// Row of the clips list: none, a quarter, half, three quarters, all.
+    clips: int,
+    /// What the length and the mix come to before a word is written:
+    /// chapters, scenes and voice lines, video and image prompts, words.
+    budget: string,
+    /// What it comes to in dollars, item by item, and whether that is over
+    /// the limit.
+    cost: string,
+    /// The most a run may spend, as typed; empty for no limit.
+    spend-limit: string,
+    /// What a clip and a still cost, as typed; empty for the defaults.
+    clip-price: string,
+    image-price: string,
+    /// Row of the language list.
+    language: int,
+    /// 0 16:9, 1 9:16, 2 1:1
+    aspect: int,
+    /// 0 documentary, 1 educational, 2 academic, 3 story, 4 news
+    content-style: int,
+    /// 0 beginner, 1 general, 2 informed
+    level: int,
+    /// Read up on the web before writing.
+    research: bool,
+    /// 0 pictures and animated cards, 1 animated cards only.
+    visuals: int,
+    /// 0 economical pictures, 1 professional, 2 best (four megapixels).
+    picture-quality: int,
+    /// 0 auto, 1 photo, 2 flat illustration, 3 3D cartoon.
+    picture-style: int,
+    channel-name: string,
+    channel-audience: string,
+    channel-voice: string,
+    channel-opening: string,
+    channel-closing: string,
+    channel-example: string,
+    /// What the channel covers, and the rules its scripts keep to.
+    channel-topics: string,
+    channel-rules: string,
+    /// How many Shorts are cut from a video, one to five.
+    shorts-count: int,
+    /// How many videos the channel remembers having made, said; empty
+    /// for none.
+    channel-memory: string,
+    /// The channels' list row of the channel in use; 0 for none.
+    channel-row: int,
+    /// The research kept with the video: its notes, to read and correct,
+    /// and how many sources they cite, said; empty for none.
+    has-research: bool,
+    research-notes: string,
+    research-sources: string,
+    /// What the check before publishing found, a line each; empty until
+    /// it has run.
+    publish-check: string,
+    /// 0 none, 1 Concat's own voices, 2 ElevenLabs
+    voice: int,
+    /// 0 draft cards, 1 Replicate, 2 made by hand
+    shots: int,
+    /// Row of the music list; 0 is none.
+    music: int,
+    captions: bool,
+    /// 0 classic, 1 animated
+    caption-look: int,
+    titles: bool,
+    /// The cut's own sounds, and the music lifted where nobody speaks.
+    sounds: bool,
+    /// 0 none, 1 one idea in a minute, 2 a story, 3 a lesson.
+    format: int,
+    /// The video's shape in the person's own words.
+    structure: string,
+    /// What the video is made from: a page's address or a file's path.
+    source: string,
+    /// Row of the language the video is made again in.
+    also-language: int,
+    /// The writer has proposed videos to make.
+    has-ideas: bool,
+    /// How many ideas of a batch are still to make.
+    queued: int,
+    /// The channel's colour, as typed.
+    brand-color: string,
+    /// Row of the logo list; 0 is none.
+    logo: int,
+    /// The channel's opening and closing on every video.
+    bumpers: bool,
+    /// Open on a hook written last, from the whole script.
+    hook: bool,
+    /// Deeper analysis before and after writing.
+    deep: bool,
+    /// Every picture checked against its narration once made.
+    picture-check: bool,
+    anthropic-key: string,
+    /// Who writes: 0 Claude, 1 ChatGPT; the OpenAI key it writes with
+    /// (the pictures' too), and its model, with the default shown.
+    writer: int,
+    openai-key: string,
+    writer-model: string,
+    writer-model-default: string,
+    replicate-token: string,
+    /// The video model; empty for stills only.
+    replicate-model: string,
+    /// The image model; empty for the default.
+    replicate-image-model: string,
+    /// Who makes the pictures: 0 Replicate, 1 OpenAI, 2 Gemini.
+    picture-maker: int,
+    /// Who makes the clips: 0 Replicate, 1 Kling, 2 Seedance.
+    clip-maker: int,
+    /// The chosen picture maker's key and model, and its default model.
+    picture-key: string,
+    picture-model: string,
+    picture-model-default: string,
+    /// The chosen clip maker's key, Kling's secret, the model and its
+    /// default.
+    clip-key: string,
+    clip-secret: string,
+    clip-model: string,
+    clip-model-default: string,
+    /// Export the finished cut without being asked.
+    auto-export: bool,
+    elevenlabs-key: string,
+    elevenlabs-voice: string,
+    /// 0 multilingual v2, 1 v3.
+    voice-model: int,
+    /// word = reading; word = reading
+    pronunciation: string,
+    /// A storyboard is in the project folder for this idea.
+    has-script: bool,
+    /// What that storyboard holds, in words.
+    script-summary: string,
+    /// How far the job is: what is made and kept, and what comes next.
+    status: string,
+    /// Every shot is made: a Short can be cut from the video.
+    can-short: bool,
+    running: bool,
+    /// 0..1
+    progress: float,
+    /// What the run is doing, in words.
+    stage: string,
+    /// The step under way: 0 the script, 1 the narration, 2 the shots,
+    /// 3 the cut.
+    phase: int,
+    /// The run reads its scenes aloud.
+    voiced: bool,
+    /// What the step under way is making, in the script's words.
+    detail: string,
+    /// The last shot made, shown while the next one is.
+    has-preview: bool,
+    preview: image,
+    /// Shots made of how many: "4 / 10".
+    counts: string,
+    /// What the run has paid so far, in words; empty while nothing.
+    spent: string,
+    /// Why the last run failed, when it did.
+    message: string,
+    /// The writer is writing what goes up with the video on YouTube.
+    publishing: bool,
+    /// It has been written: the title, the description with the chapters'
+    /// times, and the tags, comma-separated.
+    has-publishing: bool,
+    publish-title: string,
+    publish-description: string,
+    publish-tags: string,
+}
+
+// One text to put on YouTube: what it is, a copy button, and the text.
+component PublishLine inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 4px;
+
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            horizontal-stretch: 1;
+            text: root.label;
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+        }
+        CopyChip { text: root.value; }
+    }
+    Text {
+        text: root.value;
+        color: Theme.fg;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
+    }
+}
+
+// One step of a run, as the checklist shows it: waiting, under way (a dot
+// circling the ring), done (a tick), or not part of this run.
+component RunStep inherits HorizontalLayout {
+    in property <string> label;
+    /// 0 waiting, 1 under way, 2 done, 3 skipped
+    in property <int> state;
+    in property <string> note;
+
+    spacing: 10px;
+    height: 26px;
+
+    VerticalLayout {
+        alignment: center;
+
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            background: root.state == 2 ? Theme.accent : transparent;
+            border-width: root.state == 2 ? 0px : 1.5px;
+            border-color: root.state == 1 ? Theme.accent-soft : Theme.line;
+
+            if root.state == 2: Icon {
+                x: 4px;
+                y: 4px;
+                glyph: Glyph.check;
+                size: 12px;
+                tint: Theme.on-accent;
+                weight: 3;
+            }
+
+            if root.state == 1: Rectangle {
+                property <angle> turn: animation-tick() / 1100ms * 360deg;
+                x: 10px + 7.5px * Math.cos(self.turn) - 3px;
+                y: 10px + 7.5px * Math.sin(self.turn) - 3px;
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.accent;
+            }
+        }
+    }
+
+    Text {
+        horizontal-stretch: 1;
+        text: root.label;
+        color: root.state == 1 ? Theme.fg : root.state == 2 ? Theme.fg-muted : Theme.fg-dim;
+        font-size: Theme.fs;
+        font-weight: root.state == 1 ? Theme.weight-title : 400;
+        vertical-alignment: center;
+    }
+
+    if root.note != "": Text {
+        text: root.note;
+        color: root.state == 1 ? Theme.accent : Theme.fg-dim;
+        font-family: Theme.font-technical;
+        font-size: Theme.fs-sm;
+        vertical-alignment: center;
+    }
+}
+
+export component GenerateDialog inherits Modal {
+    in property <GenerateSheetData> data;
+    /// On a phone, which has no file manager to show the job's folder in.
+    in property <bool> phone;
+    /// "None", then every recording in the bin.
+    in property <[string]> music-options;
+    in property <[string]> logo-options;
+    in property <[string]> idea-options;
+    in property <[string]> template-options;
+
+    /// Which text: 0 topic, 1 notes, 2 Anthropic key, 3 Replicate token,
+    /// 4 Replicate video model, 5 ElevenLabs key, 6 ElevenLabs voice,
+    /// 7 Replicate image model, 8 spend limit, 9 price of a clip, 10 price
+    /// of a still, 11-16 the channel: name, audience, voice, opening line,
+    /// closing line, a script it likes; 26 its topics, 27 its rules; 28
+    /// the research notes.
+    callback text-edited(field: int, text: string);
+    /// Which choice: 0 minutes, 1 language, 2 aspect, 3 voice, 4 shots,
+    /// 5 music, 6 clips, 7 caption look, 8 content style, 9 picture quality,
+    /// 10 audience level, 11 visuals (pictures and cards, or cards only).
+    callback choice-changed(field: int, index: int);
+    /// Which switch: 0 captions, 1 titles, 2 export when done, 3 research
+    /// on the web.
+    callback toggled(field: int, on: bool);
+    callback write-script();
+    callback create();
+    callback open-folder();
+    callback edit-script();
+    /// Cut a Short: a minute of the video, 9:16.
+    callback make-short();
+    /// One of the sheet's buttons: 0 suggest ideas, 1 make every idea,
+    /// 2 make the video in another language, 3 save the choices as a
+    /// series, 4 cut several Shorts, 5 research first, 6 export everything.
+    callback act(kind: int);
+    callback publish();
+    callback cancel();
+
+    open: root.data.open;
+    title: I18n.t("generate.longVideo");
+    glyph: Glyph.sparkle;
+    surface-width: 560px;
+    surface-height: 680px;
+    dismissable: !root.data.running;
+
+    // The idea being typed, held apart from `data.topic` as the captions
+    // sheet holds its script: re-seeded when the sheet opens, never while
+    // it is being typed into.
+    property <string> draft;
+    property <bool> typing;
+    // The research notes being corrected, held apart the same way.
+    property <string> notes-draft;
+    property <bool> notes-typing;
+    changed data => {
+        if (!root.typing) {
+            root.draft = root.data.topic;
+        }
+        if (!root.notes-typing) {
+            root.notes-draft = root.data.research-notes;
+        }
+    }
+    init => {
+        root.draft = root.data.topic;
+        root.notes-draft = root.data.research-notes;
+    }
+
+    VerticalLayout {
+        if !root.data.running: Rectangle {
+            vertical-stretch: 1;
+
+            Flickable {
+                content-height: form.preferred-height;
+
+                form := VerticalLayout {
+                    DialogSection {
+                        first: true;
+                        title: I18n.t("generate.idea");
+
+                        // The channel the video is for: picking one brings
+                        // back everything saved with it.
+                        DialogRow {
+                            label: I18n.t("generate.channelPick");
+                            Select {
+                                options: root.template-options;
+                                current: root.data.channel-row;
+                                changed(index) => { root.choice-changed(18, index); }
+                            }
+                        }
+
+                        if root.data.channel-memory != "": Text {
+                            text: root.data.channel-memory;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        // A kind of video made whole: picking one sets the
+                        // frame, the length and the look that go with it,
+                        // and tells the writer its shape.
+                        DialogRow {
+                            label: I18n.t("generate.format");
+                            Select {
+                                options: [
+                                    I18n.t("generate.formatCustom"),
+                                    I18n.t("generate.formatMinute"),
+                                    I18n.t("generate.formatStory"),
+                                    I18n.t("generate.formatLesson"),
+                                ];
+                                current: root.data.format;
+                                changed(index) => { root.choice-changed(19, index); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.format == 1 ? I18n.t("generate.formatMinuteHint")
+                                : root.data.format == 2 ? I18n.t("generate.formatStoryHint")
+                                : root.data.format == 3 ? I18n.t("generate.formatLessonHint")
+                                : I18n.t("generate.formatCustomHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 88px;
+                            border-radius: Theme.r;
+                            background: Theme.well;
+                            border-width: 1px;
+                            border-color: idea.has-focus ? Theme.accent : Theme.line;
+                            clip: true;
+
+                            idea := TextInput {
+                                x: 10px;
+                                y: 8px;
+                                width: parent.width - 20px;
+                                height: parent.height - 16px;
+                                text <=> root.draft;
+                                color: Theme.fg;
+                                font-size: Theme.fs-lg;
+                                single-line: false;
+                                wrap: word-wrap;
+                                selection-background-color: Theme.accent;
+                                selection-foreground-color: Theme.on-accent;
+                                changed has-focus => { root.typing = self.has-focus; }
+                                edited => { root.text-edited(0, self.text); }
+                                key-pressed(event) => {
+                                    if (event.text == Key.Home) {
+                                        self.set-selection-offsets(0, 0);
+                                        return accept;
+                                    }
+                                    if (event.text == Key.End) {
+                                        self.set-selection-offsets(1000000000, 1000000000);
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+                            }
+
+                            if root.draft == "" && !idea.has-focus: Text {
+                                x: 10px;
+                                y: 8px;
+                                width: parent.width - 20px;
+                                text: I18n.t("generate.ideaPlaceholder");
+                                color: Theme.fg-dim;
+                                font-size: Theme.fs-lg;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // A format of the person's own: how their videos
+                        // open, what they are made of, how they end - for
+                        // any kind the app has no format for. Kept with a
+                        // series.
+                        DialogRow {
+                            label: I18n.t("generate.structure");
+                            Field {
+                                value: root.data.structure;
+                                placeholder: I18n.t("generate.structurePlaceholder");
+                                edited(text) => { root.text-edited(20, text); }
+                            }
+                        }
+
+                        Text {
+                            text: I18n.t("generate.structureHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        // The research, done first on its own when asked:
+                        // its notes shown here to read and correct, kept
+                        // with the video, and the script written from them.
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: root.data.has-research
+                                    ? I18n.t("generate.researchAgain")
+                                    : I18n.t("generate.researchFirst");
+                                glyph: Glyph.search;
+                                clicked => { root.act(5); }
+                            }
+                        }
+
+                        if root.data.has-research: Text {
+                            text: I18n.t("generate.researchNotesHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.has-research: Rectangle {
+                            height: 220px;
+                            border-radius: Theme.r;
+                            background: Theme.well;
+                            border-width: 1px;
+                            border-color: notes.has-focus ? Theme.accent : Theme.line;
+                            clip: true;
+
+                            Flickable {
+                                x: 10px;
+                                y: 8px;
+                                width: parent.width - 20px;
+                                height: parent.height - 16px;
+                                content-height: max(self.height, notes.preferred-height);
+
+                                notes := TextInput {
+                                    width: parent.width;
+                                    text <=> root.notes-draft;
+                                    color: Theme.fg;
+                                    font-size: Theme.fs;
+                                    single-line: false;
+                                    wrap: word-wrap;
+                                    selection-background-color: Theme.accent;
+                                    selection-foreground-color: Theme.on-accent;
+                                    changed has-focus => { root.notes-typing = self.has-focus; }
+                                    edited => { root.text-edited(28, self.text); }
+                                }
+                            }
+                        }
+
+                        if root.data.research-sources != "": Text {
+                            text: root.data.research-sources;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        // Videos worth making, proposed for the channel:
+                        // one picked becomes the idea above; all of them
+                        // are made one after another.
+                        HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+
+                            Button {
+                                label: I18n.t("generate.suggestIdeas");
+                                glyph: Glyph.sparkle;
+                                clicked => { root.act(0); }
+                            }
+
+                            if root.data.has-ideas: Button {
+                                label: I18n.t("generate.makeAllIdeas");
+                                glyph: Glyph.film;
+                                clicked => { root.act(1); }
+                            }
+                        }
+
+                        if root.data.has-ideas: Select {
+                            options: root.idea-options;
+                            current: 0;
+                            changed(index) => { root.choice-changed(16, index); }
+                        }
+
+                        if root.data.has-ideas || root.data.queued > 0: Text {
+                            text: I18n.t("generate.makeAllHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.notes");
+                            Field {
+                                value: root.data.notes;
+                                placeholder: I18n.t("generate.notesPlaceholder");
+                                edited(text) => { root.text-edited(1, text); }
+                            }
+                        }
+
+                        // An article's address, or a PDF or text file's
+                        // path: the video says what it says.
+                        DialogRow {
+                            label: I18n.t("generate.madeFrom");
+                            Field {
+                                value: root.data.source;
+                                technical: true;
+                                placeholder: I18n.t("generate.madeFromPlaceholder");
+                                edited(text) => { root.text-edited(19, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.length");
+                            Select {
+                                options: ["1 min", "3 min", "5 min", "10 min", "15 min", "20 min", "30 min", "60 min"];
+                                current: root.data.minutes;
+                                changed(index) => { root.choice-changed(0, index); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.clips");
+                            Select {
+                                options: [I18n.t("generate.clipsNone"), "25%", "50%", "75%", "100%"];
+                                current: root.data.clips;
+                                changed(index) => { root.choice-changed(6, index); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.budget;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        Text {
+                            text: root.data.cost;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.spendLimit");
+                            Field {
+                                value: root.data.spend-limit;
+                                technical: true;
+                                placeholder: I18n.t("generate.noLimit");
+                                edited(text) => { root.text-edited(8, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.language");
+                            Select {
+                                options: ["العربية", "English", "Français", "Español", "Deutsch", "Türkçe", "Português", "Bahasa Indonesia", "हिन्दी", "اردو"];
+                                current: root.data.language;
+                                changed(index) => { root.choice-changed(1, index); }
+                            }
+                        }
+
+                        // What the video is for: the writer is briefed
+                        // differently for each, and its pictures with it.
+                        DialogRow {
+                            label: I18n.t("generate.contentStyle");
+                            Select {
+                                options: [
+                                    I18n.t("generate.styleDocumentary"),
+                                    I18n.t("generate.styleEducational"),
+                                    I18n.t("generate.styleAcademic"),
+                                    I18n.t("generate.styleStory"),
+                                    I18n.t("generate.styleNews"),
+                                ];
+                                current: root.data.content-style;
+                                changed(index) => { root.choice-changed(8, index); }
+                            }
+                        }
+
+                        // How much the viewer already knows: the writer
+                        // explains every step, or takes the basics as read.
+                        DialogRow {
+                            label: I18n.t("generate.level");
+                            SegmentedControl {
+                                options: [I18n.t("generate.levelBeginner"), I18n.t("generate.levelGeneral"), I18n.t("generate.levelInformed")];
+                                current: root.data.level;
+                                changed(index) => { root.choice-changed(10, index); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.frame");
+                            SegmentedControl {
+                                options: ["16:9", "9:16", "1:1"];
+                                current: root.data.aspect;
+                                changed(index) => { root.choice-changed(2, index); }
+                            }
+                        }
+
+                        if root.data.has-script: HorizontalLayout {
+                            spacing: 8px;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Icon { glyph: Glyph.check; size: 13px; tint: Theme.accent; }
+                            }
+
+                            Text {
+                                horizontal-stretch: 1;
+                                text: root.data.script-summary;
+                                color: Theme.fg-muted;
+                                font-size: Theme.fs-sm;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+
+                            Button {
+                                label: I18n.t("generate.editScript");
+                                glyph: Glyph.text-mark;
+                                clicked => { root.edit-script(); }
+                            }
+
+                            if !root.phone: Button {
+                                label: I18n.t("generate.openFolder");
+                                glyph: Glyph.folder;
+                                ghost: true;
+                                clicked => { root.open-folder(); }
+                            }
+                        }
+
+                        // A wrapped line on its own: beside an icon, a
+                        // layout row was given one line's height.
+                        if root.data.has-script && root.data.status != "": Text {
+                            text: root.data.status;
+                            color: Theme.accent;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        // A minute of the finished video, cut again for a
+                        // phone held upright: nothing is made or paid for
+                        // again. The button on a line of its own and the
+                        // words under it: side by side on a phone, the
+                        // wrapped words took the row and left the button
+                        // no width at all.
+                        if root.data.can-short: HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+
+                            Button {
+                                label: I18n.t("generate.makeShort");
+                                glyph: Glyph.film;
+                                clicked => { root.make-short(); }
+                            }
+
+                            Button {
+                                label: I18n.t("generate.makeShorts");
+                                glyph: Glyph.film;
+                                clicked => { root.act(4); }
+                            }
+                        }
+
+                        // Export everything: the long video and every
+                        // Short, one after another, into the video's
+                        // folder beside what goes up with each.
+                        if root.data.can-short: HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+
+                            Button {
+                                label: I18n.t("generate.exportAll");
+                                glyph: Glyph.film;
+                                clicked => { root.act(6); }
+                            }
+
+                            // What to look at before the videos go up:
+                            // warnings, never a block.
+                            Button {
+                                label: I18n.t("generate.checkBefore");
+                                glyph: Glyph.search;
+                                clicked => { root.act(7); }
+                            }
+                        }
+
+                        if root.data.can-short: Text {
+                            text: I18n.t("generate.exportAllHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.can-short && root.data.publish-check != "": Text {
+                            text: root.data.publish-check;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.can-short && root.data.publish-check != "": Text {
+                            text: I18n.t("generate.checkHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        // The same video again in another language: the
+                        // pictures as they are, the words and the voice new.
+                        if root.data.can-short: DialogRow {
+                            label: I18n.t("generate.alsoIn");
+                            Select {
+                                options: ["العربية", "English", "Français", "Español", "Deutsch", "Türkçe", "Português", "Bahasa Indonesia", "हिन्दी", "اردو"];
+                                current: root.data.also-language;
+                                changed(index) => { root.choice-changed(17, index); }
+                            }
+                        }
+
+                        if root.data.can-short: HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.translate");
+                                glyph: Glyph.text-mark;
+                                clicked => { root.act(2); }
+                            }
+                        }
+
+                        if root.data.can-short: Text {
+                            text: I18n.t("generate.makeShortHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    DialogSection {
+                        title: I18n.t("generate.voice");
+
+                        DialogRow {
+                            label: I18n.t("generate.reader");
+                            Select {
+                                options: [I18n.t("generate.noVoice"), I18n.t("generate.concatVoices"), "ElevenLabs"];
+                                current: root.data.voice;
+                                changed(index) => { root.choice-changed(3, index); }
+                            }
+                        }
+
+                        if root.data.voice == 1: Text {
+                            text: I18n.t("generate.concatVoicesHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.voice == 2: DialogRow {
+                            label: I18n.t("generate.apiKey");
+                            Field {
+                                value: root.data.elevenlabs-key;
+                                secret: true;
+                                technical: true;
+                                placeholder: "xi-...";
+                                edited(text) => { root.text-edited(5, text); }
+                            }
+                        }
+
+                        if root.data.voice == 2: DialogRow {
+                            label: I18n.t("generate.voiceId");
+                            Field {
+                                value: root.data.elevenlabs-voice;
+                                technical: true;
+                                edited(text) => { root.text-edited(6, text); }
+                            }
+                        }
+
+                        // v2 reads each line in the light of its
+                        // neighbours; v3 is the more expressive.
+                        if root.data.voice == 2: DialogRow {
+                            label: I18n.t("generate.voiceModel");
+                            SegmentedControl {
+                                options: [I18n.t("generate.voiceModelStandard"), I18n.t("generate.voiceModelExpressive")];
+                                current: root.data.voice-model;
+                                changed(index) => { root.choice-changed(13, index); }
+                            }
+                        }
+
+                        // Words the voice says wrong, written as they are
+                        // to be said.
+                        if root.data.voice == 2: DialogRow {
+                            label: I18n.t("generate.pronunciation");
+                            Field {
+                                value: root.data.pronunciation;
+                                placeholder: I18n.t("generate.pronunciationPlaceholder");
+                                edited(text) => { root.text-edited(17, text); }
+                            }
+                        }
+
+                        if root.data.voice == 2: Text {
+                            text: I18n.t("generate.pronunciationHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    DialogSection {
+                        title: I18n.t("generate.shots");
+
+                        // Animated cards - figures, comparisons, dates,
+                        // points - drawn by the app, among the pictures
+                        // or instead of them.
+                        DialogRow {
+                            label: I18n.t("generate.visuals");
+                            SegmentedControl {
+                                options: [I18n.t("generate.visualsMixed"), I18n.t("generate.visualsCards")];
+                                current: root.data.visuals;
+                                changed(index) => { root.choice-changed(11, index); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.visuals == 1 ? I18n.t("generate.visualsCardsHint") : I18n.t("generate.visualsMixedHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.source");
+                            Select {
+                                options: [I18n.t("generate.draftCards"), I18n.t("generate.replicateMix"), I18n.t("generate.byHand")];
+                                current: root.data.shots;
+                                changed(index) => { root.choice-changed(4, index); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.shots == 0 ? I18n.t("generate.draftCardsHint")
+                                : root.data.shots == 1 ? I18n.t("generate.replicateHint")
+                                : I18n.t("generate.byHandHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        // Who makes the pictures and who the clips: each
+                        // with the person's own key, none held to one
+                        // service.
+                        if root.data.shots == 1: DialogRow {
+                            label: I18n.t("generate.picturesBy");
+                            Select {
+                                options: ["Replicate", "OpenAI", "Google Gemini"];
+                                current: root.data.picture-maker;
+                                changed(index) => { root.choice-changed(20, index); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.picture-maker != 0: DialogRow {
+                            label: I18n.t("generate.apiKey");
+                            Field {
+                                value: root.data.picture-key;
+                                secret: true;
+                                technical: true;
+                                placeholder: root.data.picture-maker == 1 ? "sk-..." : "AIza...";
+                                edited(text) => { root.text-edited(21, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.picture-maker != 0: DialogRow {
+                            label: I18n.t("generate.imageModel");
+                            Field {
+                                value: root.data.picture-model;
+                                technical: true;
+                                placeholder: root.data.picture-model-default;
+                                edited(text) => { root.text-edited(22, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1: DialogRow {
+                            label: I18n.t("generate.clipsBy");
+                            Select {
+                                options: ["Replicate", "Kling", "Seedance"];
+                                current: root.data.clip-maker;
+                                changed(index) => { root.choice-changed(21, index); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.clip-maker != 0: DialogRow {
+                            label: root.data.clip-maker == 1 ? I18n.t("generate.accessKey") : I18n.t("generate.apiKey");
+                            Field {
+                                value: root.data.clip-key;
+                                secret: true;
+                                technical: true;
+                                edited(text) => { root.text-edited(23, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.clip-maker == 1: DialogRow {
+                            label: I18n.t("generate.secretKey");
+                            Field {
+                                value: root.data.clip-secret;
+                                secret: true;
+                                technical: true;
+                                edited(text) => { root.text-edited(24, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.clip-maker != 0: DialogRow {
+                            label: I18n.t("generate.videoModel");
+                            Field {
+                                value: root.data.clip-model;
+                                technical: true;
+                                placeholder: root.data.clip-model-default;
+                                edited(text) => { root.text-edited(25, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1: Text {
+                            text: I18n.t("generate.makersHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.shots == 1: DialogRow {
+                            label: I18n.t("generate.apiKey");
+                            Field {
+                                value: root.data.replicate-token;
+                                secret: true;
+                                technical: true;
+                                placeholder: "r8_...";
+                                edited(text) => { root.text-edited(3, text); }
+                            }
+                        }
+
+                        // Economical: flux-schnell, a third of a cent a
+                        // picture; professional: flux-1.1-pro, finer detail
+                        // and truer light, about four cents; best:
+                        // flux-1.1-pro-ultra, four megapixels, about six.
+                        // Sets the model and its price below.
+                        if root.data.shots == 1 && root.data.picture-maker == 0: DialogRow {
+                            label: I18n.t("generate.pictureQuality");
+                            SegmentedControl {
+                                options: [I18n.t("generate.pictureEconomy"), I18n.t("generate.pictureProfessional"), I18n.t("generate.pictureBest")];
+                                current: root.data.picture-quality;
+                                changed(index) => { root.choice-changed(9, index); }
+                            }
+                        }
+
+                        // One look for every picture; illustration and
+                        // cartoon bring back the same characters.
+                        if root.data.shots == 1 && root.data.visuals == 0: DialogRow {
+                            label: I18n.t("generate.pictureStyle");
+                            Select {
+                                options: [
+                                    I18n.t("generate.picturesAuto"),
+                                    I18n.t("generate.picturesPhoto"),
+                                    I18n.t("generate.picturesFlat"),
+                                    I18n.t("generate.picturesCartoon"),
+                                ];
+                                current: root.data.picture-style;
+                                changed(index) => { root.choice-changed(12, index); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.visuals == 0: Text {
+                            text: I18n.t("generate.picturesHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.shots == 1 && root.data.picture-maker == 0: DialogRow {
+                            label: I18n.t("generate.imageModel");
+                            Field {
+                                value: root.data.replicate-image-model;
+                                technical: true;
+                                placeholder: "black-forest-labs/flux-schnell";
+                                edited(text) => { root.text-edited(7, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.clip-maker == 0: DialogRow {
+                            label: I18n.t("generate.videoModel");
+                            Field {
+                                value: root.data.replicate-model;
+                                technical: true;
+                                placeholder: "wan-video/wan-2.2-i2v-fast";
+                                edited(text) => { root.text-edited(4, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.clip-maker == 0: DialogRow {
+                            label: I18n.t("generate.clipPrice");
+                            Field {
+                                value: root.data.clip-price;
+                                technical: true;
+                                placeholder: "0.10";
+                                edited(text) => { root.text-edited(9, text); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.picture-maker == 0: DialogRow {
+                            label: I18n.t("generate.imagePrice");
+                            Field {
+                                value: root.data.image-price;
+                                technical: true;
+                                placeholder: "0.003";
+                                edited(text) => { root.text-edited(10, text); }
+                            }
+                        }
+                    }
+
+                    // The channel the writer writes for, told once and
+                    // kept; and whether it reads up on the web first.
+                    DialogSection {
+                        title: I18n.t("generate.channel");
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.research");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.research;
+                                    toggled(on) => { root.toggled(3, on); }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.deepAnalysis");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.deep;
+                                    toggled(on) => { root.toggled(7, on); }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.pictureCheck");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.picture-check;
+                                    toggled(on) => { root.toggled(8, on); }
+                                }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelName");
+                            Field {
+                                value: root.data.channel-name;
+                                edited(text) => { root.text-edited(11, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelAudience");
+                            Field {
+                                value: root.data.channel-audience;
+                                placeholder: I18n.t("generate.channelAudienceHint");
+                                edited(text) => { root.text-edited(12, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelVoice");
+                            Field {
+                                value: root.data.channel-voice;
+                                placeholder: I18n.t("generate.channelVoiceHint");
+                                edited(text) => { root.text-edited(13, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelOpening");
+                            Field {
+                                value: root.data.channel-opening;
+                                edited(text) => { root.text-edited(14, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelClosing");
+                            Field {
+                                value: root.data.channel-closing;
+                                edited(text) => { root.text-edited(15, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelExample");
+                            Field {
+                                value: root.data.channel-example;
+                                placeholder: I18n.t("generate.channelExampleHint");
+                                edited(text) => { root.text-edited(16, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelTopics");
+                            Field {
+                                value: root.data.channel-topics;
+                                placeholder: I18n.t("generate.channelTopicsHint");
+                                edited(text) => { root.text-edited(26, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.channelRules");
+                            Field {
+                                value: root.data.channel-rules;
+                                placeholder: I18n.t("generate.channelRulesHint");
+                                edited(text) => { root.text-edited(27, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.shortsCount");
+                            Select {
+                                options: ["1", "2", "3", "4", "5"];
+                                current: root.data.shorts-count - 1;
+                                changed(index) => { root.choice-changed(22, index); }
+                            }
+                        }
+
+                        // The choices saved under the channel's name, and
+                        // brought back with one pick: a series.
+                        DialogRow {
+                            label: I18n.t("generate.series");
+                            Select {
+                                options: root.template-options;
+                                current: root.data.channel-row;
+                                changed(index) => { root.choice-changed(18, index); }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.saveSeries");
+                                clicked => { root.act(3); }
+                            }
+                        }
+
+                        // The channel's look: its colour, its logo in a
+                        // corner, its opening and closing on every video.
+                        DialogRow {
+                            label: I18n.t("generate.brandColor");
+                            Field {
+                                value: root.data.brand-color;
+                                technical: true;
+                                placeholder: "#FFD400";
+                                edited(text) => { root.text-edited(18, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: I18n.t("generate.brandLogo");
+                            Select {
+                                options: root.logo-options;
+                                current: root.data.logo;
+                                changed(index) => { root.choice-changed(14, index); }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.brandBumpers");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.bumpers;
+                                    toggled(on) => { root.toggled(5, on); }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: I18n.t("generate.brandHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    DialogSection {
+                        title: I18n.t("generate.cut");
+
+                        DialogRow {
+                            label: I18n.t("generate.music");
+                            Select {
+                                options: root.music-options;
+                                current: root.data.music;
+                                changed(index) => { root.choice-changed(5, index); }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.captionsFromNarration");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.captions;
+                                    toggled(on) => { root.toggled(0, on); }
+                                }
+                            }
+                        }
+
+                        if root.data.captions: DialogRow {
+                            label: I18n.t("generate.captionLook");
+                            SegmentedControl {
+                                options: [I18n.t("generate.captionClassic"), I18n.t("generate.captionAnimated")];
+                                current: root.data.caption-look;
+                                changed(index) => { root.choice-changed(7, index); }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.exportWhenDone");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.auto-export;
+                                    toggled(on) => { root.toggled(2, on); }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.chapterTitles");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.titles;
+                                    toggled(on) => { root.toggled(1, on); }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.sounds");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.sounds;
+                                    toggled(on) => { root.toggled(4, on); }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: I18n.t("generate.hook");
+                                color: Theme.fg;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: root.data.hook;
+                                    toggled(on) => { root.toggled(6, on); }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: I18n.t("generate.hookHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    DialogSection {
+                        title: I18n.t("generate.publishing");
+                        hint: I18n.t("generate.publishingHint");
+
+                        if root.data.has-publishing: PublishLine {
+                            label: I18n.t("generate.publishTitle");
+                            value: root.data.publish-title;
+                        }
+                        if root.data.has-publishing: PublishLine {
+                            label: I18n.t("generate.publishDescription");
+                            value: root.data.publish-description;
+                        }
+                        if root.data.has-publishing: PublishLine {
+                            label: I18n.t("generate.publishTags");
+                            value: root.data.publish-tags;
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: root.data.publishing
+                                    ? I18n.t("generate.publishBusy")
+                                    : root.data.has-publishing
+                                    ? I18n.t("generate.publishAgain")
+                                    : I18n.t("generate.publish");
+                                glyph: Glyph.tag;
+                                enabled: root.data.has-script && !root.data.publishing
+                                    && !root.data.running;
+                                clicked => { root.publish(); }
+                            }
+                        }
+                    }
+
+                    DialogSection {
+                        title: I18n.t("generate.writer");
+                        hint: I18n.t("generate.writerHint");
+
+                        DialogRow {
+                            label: I18n.t("generate.writtenBy");
+                            Select {
+                                options: ["Claude", "ChatGPT"];
+                                current: root.data.writer;
+                                changed(index) => { root.choice-changed(23, index); }
+                            }
+                        }
+
+                        if root.data.writer == 0: DialogRow {
+                            label: "Claude";
+                            Field {
+                                value: root.data.anthropic-key;
+                                secret: true;
+                                technical: true;
+                                placeholder: "sk-ant-...";
+                                edited(text) => { root.text-edited(2, text); }
+                            }
+                        }
+
+                        if root.data.writer == 1: DialogRow {
+                            label: "ChatGPT";
+                            Field {
+                                value: root.data.openai-key;
+                                secret: true;
+                                technical: true;
+                                placeholder: "sk-...";
+                                edited(text) => { root.text-edited(29, text); }
+                            }
+                        }
+
+                        if root.data.writer == 1: DialogRow {
+                            label: I18n.t("generate.writerModel");
+                            Field {
+                                value: root.data.writer-model;
+                                technical: true;
+                                placeholder: root.data.writer-model-default;
+                                edited(text) => { root.text-edited(30, text); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // While a run is under way the sheet is its stage: the last shot
+        // made, the words of the one being made, the steps, and what it
+        // has cost - and the reassurance that leaving loses nothing.
+        if root.data.running: Rectangle {
+            vertical-stretch: 1;
+
+            Flickable {
+                content-height: run.preferred-height;
+
+                run := VerticalLayout {
+                    padding: 20px;
+                    spacing: 16px;
+
+                    // The shots under way: the last one made, large.
+                    if root.data.has-preview: Rectangle {
+                        height: Math.min(self.width * 9 / 16, 240px);
+                        border-radius: 16px;
+                        background: Theme.well;
+                        clip: true;
+
+                        Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: root.data.preview;
+                            image-fit: contain;
+                        }
+
+                        // A sheen sweeping across: the stage is at work.
+                        Rectangle {
+                            property <float> sweep: Math.mod(animation-tick() / 2200ms, 1);
+                            x: (parent.width * 1.6) * self.sweep - parent.width * 0.6;
+                            width: parent.width * 0.6;
+                            height: parent.height;
+                            background: @linear-gradient(90deg, #ffffff00 0%, #ffffff1f 50%, #ffffff00 100%);
+                        }
+
+                        if root.data.counts != "": Rectangle {
+                            x: 10px;
+                            y: 10px;
+                            width: chip.preferred-width + 16px;
+                            height: 22px;
+                            border-radius: 11px;
+                            background: #000000a0;
+
+                            chip := Text {
+                                text: root.data.counts;
+                                color: #ffffff;
+                                font-family: Theme.font-technical;
+                                font-size: Theme.fs-sm;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Nothing to show yet - the script, the voice: the
+                    // ring, how far the whole run is.
+                    if !root.data.has-preview: HorizontalLayout {
+                        alignment: center;
+                        ProgressRing { value: root.data.progress; }
+                    }
+
+                    VerticalLayout {
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            Text {
+                                horizontal-stretch: 1;
+                                horizontal-alignment: root.data.has-preview ? left : center;
+                                text: root.data.stage;
+                                color: Theme.fg;
+                                font-size: Theme.fs-lg;
+                                font-weight: Theme.weight-title;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+
+                            if root.data.has-preview: Text {
+                                text: "\{Math.floor(root.data.progress * 100)}%";
+                                color: Theme.accent;
+                                font-family: Theme.font-technical;
+                                font-size: Theme.fs-lg;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // What is being written or made, in the script's
+                        // words: a chapter's title, a line, a picture.
+                        if root.data.detail != "": Rectangle {
+                            height: Math.min(words.preferred-height, 54px);
+                            clip: true;
+
+                            words := Text {
+                                width: parent.width;
+                                y: 0px;
+                                horizontal-alignment: root.data.has-preview ? left : center;
+                                text: "“" + root.data.detail + "”";
+                                color: Theme.fg-muted;
+                                font-size: Theme.fs-sm;
+                                font-italic: true;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    if root.data.has-preview: Progress {
+                        value: root.data.progress;
+                        live: true;
+                    }
+
+                    Rectangle {
+                        border-radius: 14px;
+                        background: Theme.raised;
+                        height: steps.preferred-height;
+
+                    steps := VerticalLayout {
+                        padding: 12px;
+                        spacing: 2px;
+
+                        RunStep {
+                            label: I18n.t("generate.stepScript");
+                            state: root.data.phase > 0 ? 2 : 1;
+                        }
+
+                        RunStep {
+                            label: I18n.t("generate.stepVoice");
+                            state: root.data.phase < 1 ? 0 : !root.data.voiced ? 3 : root.data.phase > 1 ? 2 : 1;
+                            note: root.data.phase >= 1 && !root.data.voiced ? I18n.t("generate.noVoice") : "";
+                        }
+
+                        RunStep {
+                            label: I18n.t("generate.stepShots");
+                            state: root.data.phase < 2 ? 0 : root.data.phase == 2 ? 1 : 2;
+                            note: root.data.counts;
+                        }
+
+                        RunStep {
+                            label: I18n.t("generate.stepCut");
+                            state: root.data.phase == 3 ? 1 : 0;
+                        }
+                    }
+                    }
+
+                    if root.data.spent != "": Text {
+                        text: root.data.spent;
+                        color: Theme.fg-muted;
+                        font-family: Theme.font-technical;
+                        font-size: Theme.fs-sm;
+                    }
+
+                    if root.data.phase >= 1: HorizontalLayout {
+                        spacing: 8px;
+
+                        VerticalLayout {
+                            alignment: start;
+                            Icon { glyph: Glyph.check; size: 13px; tint: Theme.fg-dim; }
+                        }
+
+                        Text {
+                            horizontal-stretch: 1;
+                            text: I18n.t("generate.keptNote");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+
+            if root.data.message != "": Rectangle {
+                border-radius: Theme.r;
+                background: Theme.danger-soft;
+
+                HorizontalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    VerticalLayout {
+                        alignment: start;
+                        Icon { glyph: Glyph.close; size: 13px; tint: Theme.danger; }
+                    }
+
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.data.message;
+                        color: Theme.danger;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+
+                    VerticalLayout {
+                        alignment: start;
+                        CopyChip { text: root.data.message; }
+                    }
+                }
+            }
+
+            // Put away, the run goes on - in another project too - and a
+            // pill over the window says how far.
+            if root.data.running: HorizontalLayout {
+                spacing: 8px;
+                Button {
+                    horizontal-stretch: 1;
+                    block: true;
+                    label: I18n.t("common.hide");
+                    glyph: Glyph.chevron-down;
+                    clicked => { root.closed(); }
+                }
+                Button {
+                    label: I18n.t("common.cancel");
+                    glyph: Glyph.close;
+                    ghost: true;
+                    clicked => { root.cancel(); }
+                }
+            }
+
+            if !root.data.running: HorizontalLayout {
+                spacing: 8px;
+
+                Button {
+                    label: root.data.has-script ? I18n.t("generate.rewriteScript") : I18n.t("generate.writeScript");
+                    glyph: Glyph.text-mark;
+                    large: true;
+                    enabled: root.draft != "";
+                    clicked => { root.write-script(); }
+                }
+
+                Button {
+                    horizontal-stretch: 1;
+                    block: true;
+                    primary: true;
+                    large: true;
+                    glyph: Glyph.film;
+                    label: I18n.t("generate.createVideo");
+                    enabled: root.draft != "" || root.data.has-script;
+                    clicked => { root.create(); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,923 @@
+# LongCut roadmap
+
+What is planned for Long video (File ▸ Long video) and what is done. Kept in
+the repository so the plan outlives any one conversation: whoever picks the
+work up - a person or an assistant - reads this first, and updates it in the
+same pull request that moves an item.
+
+Status: ✅ done · 🚧 in progress · ⏳ planned · ❌ decided against
+
+## Done
+
+- ✅ Script editor: the storyboard scene by scene, edited before a shot is
+  paid for (#10).
+- ✅ Image to video: each clip moves a still made first from its prompt;
+  a cost estimate and a spend limit (#11).
+- ✅ Claude's answer read as given, and asked again for what it left out
+  (#12).
+- ✅ Captions without narration (#13); empty lanes taken away (#14).
+- ✅ A run cut short carries on where it stopped without paying again; the
+  running view shows the last shot, the steps and what was spent (#15).
+- ✅ Make one shot again, phase 1: Make again under every shot in the
+  script editor, with its picture, and on a generated clip on the
+  timeline; a new take in `takes/`, swapped in place as one undo step
+  (#16). Known gap: after Undo the timeline shows the earlier take, but the
+  script editor's picture and a later full re-cut use the newest take.
+- ✅ Make one shot again, phase 2: Suggest another - the writer proposes a
+  new picture for one shot to read, edit and Make again. Editing a shot's
+  words keeps what was paid for (marked in `stale.txt`, made again as a
+  take); a clip the timeline will not take is left out and named rather
+  than ending the cut; no Open folder on a phone (#17).
+- ✅ Step 5a: animated captions - Caption style Classic or Animated (two
+  or three words a card, big and outlined, popping in, white and yellow)
+  (#18).
+- ✅ Step 5b: Shorts - Make a Short, once every shot of a video is made:
+  the writer picks the minute most worth a Short (scenes in a row, 60 s
+  at most) and a hook, or the opening minute is taken; cut 9:16 from the
+  files already made, pictures filling the tall frame, captions animated
+  (#19).
+- ✅ A run goes on in the background on Android: a foreground service
+  under a notification, with a wake lock; CI declares it in the APK
+  (#20). Back still closes the app and ends the run.
+- ✅ Fixes from the phone test: Make a Short on a line of its own; the
+  script editor's thumbnails read by content and handed over six at a
+  time; a stood-in colour card kept and the shot made again as a take,
+  so a cut using it still exports (#21).
+- ✅ A run of cross-fades stays under the track above it: from the fifth
+  shot of a Long video the pictures climbed onto the captions' lane in
+  the export (#22).
+
+## In progress
+
+The owner's plan after alpha.15 (28 Oct): the stages below are built one
+after another on the branch, each tested locally and committed there, and
+go up as **one** pull request and one release at the end - a branch push
+runs no CI, so nothing is built until then.
+
+- ✅ **Stage 1: export quality** (on the branch). A phone's encoder ran
+  its VBR far under the target on stills - 0.83 Mbit/s for a 60 s 1080p
+  video asked for 9: the quality setting now runs as CBR on a phone, at
+  three fifths of what the CRF implies (5.5 Mbit/s at 1080p30). A still
+  is enlarged with Lanczos rather than bilinear when it is decoded - once,
+  so it costs nothing - which keeps the edges of a 1344x768 picture
+  brought up to 1080p (about a sixth more edge detail, measured).
+- ✅ **Stage 2: sound** (on the branch). That video had no audio stream:
+  the owner narrates with ElevenLabs only (no new free voices). The Music
+  list gained "Made for this video": with real shots on Replicate, the
+  writer describes a bed from the moods, title and first lines, and
+  MusicGen (`meta/musicgen`, about $0.08) makes 30 s of it as
+  `music.mp3` in the job's folder, made once and kept; the cut loops it
+  under the whole video, ducked. A model that is not an official one on
+  Replicate now falls back to its latest version, and a file's real kind
+  (mp3, wav, m4a ...) is read from its bytes. Checked in the phone shell
+  with a stand-in file; the paid MusicGen call waits on the owner's test.
+- ✅ **Stage 3: no repeated pictures** (on the branch). Two shots of one
+  scene came out near the same picture (scenes 3-4, 9-10). The writer is
+  told that within a scene each shot shows something the others do not.
+  Every picture made is read for its likeness (a 64-bit difference hash
+  and its overall colour; colour cards and other washes are passed
+  over); one too like the shot before it is marked "Too like the shot
+  before" in the script editor, where Suggest and Make again give it
+  another, and a run that made any says so when it ends. Nothing is
+  made again on its own: that is paid for.
+- ✅ **Stage 4: the voice and its captions** (on the branch). The
+  owner's 29 Oct video stopped for about a second between paragraphs:
+  each ElevenLabs file's own silence at both ends plus the 0.6 s pad.
+  ElevenLabs is now asked with timestamps (the same price), which tells
+  when every letter is said; the cut starts each narration just before
+  its first word and ends it just after its last, the pause between
+  paragraphs is 0.35 s, and each caption card comes up as its first
+  word is said (`voice/<scene>.words.json`). A voice with no timings -
+  the built-in ones, or ElevenLabs lines made before this - is trimmed
+  to where its waveform sounds. Each line is also sent with the lines
+  either side (`previous_text` / `next_text`), so one paragraph runs on
+  from the last in the same voice rather than starting afresh.
+- ✅ **Stage 5: publishing** (on the branch). "Write for YouTube" in the
+  Long video sheet asks the writer (about $0.01) for a title, a
+  description, 10-15 tags in the video's language and English, and a
+  thumbnail's words and picture. The description gets the chapters'
+  start times from the cut, as YouTube reads them (three or more, the
+  first at 0:00, none under ten seconds). Each has a Copy button, and
+  all of it is kept as `publishing.txt` in the video's folder. The
+  thumbnail is laid on a timeline of its own, 1280x720: its picture
+  made for it on Replicate (one still's price) or, without Replicate,
+  the video's first picture, with the words large in yellow over it -
+  editable like any title; Save Video Frame As makes the picture.
+- ✅ **Stage 6: interface strings** (on the branch). Arabic is complete
+  (0 lines left in English); Spanish and French have every line
+  translated but words that are the same in both (Audio, Normal,
+  Idea...). The owner chose to stop there for now.
+- ✅ **Export on a phone** (on the branch). While a file is written the
+  export sheet shows the picture, a progress ring, the stage and the time
+  left instead of the settings, and a green tick once it is. A phone
+  holds the run service while it exports - before, leaving the app froze
+  the export - with the progress as a bar in the notification, told from
+  the export's worker.
+- ⏳ **Later: the other 21 locales.** The Long video sheet and the script
+  editor are still English in them: 110 lines each.
+- ⏳ **Ideas the owner raised (29 Oct), not started:** accounts and
+  saved work in the cloud (Supabase-style: sign-in, scripts and settings
+  synced, keys on a server; the videos stay on the phone or are an
+  option); faster making (shots and voice lines made several at a time)
+  and a measured look at where a phone's export spends its time; topic
+  and content suggestions that learn from the owner's own videos and,
+  once signed in to YouTube, from how they did.
+
+## After alpha.16 (owner's test, 29 Oct)
+
+Built on the branch overnight and sent up as one PR, as before. The
+owner's 1:16 export came out at 0.79 Mbit/s where 5.5 were asked for -
+the phone's chip ignored the CBR of stage 1 - and took about 7 minutes.
+
+- ✅ **A: export quality on a phone.** The H.264/HEVC encoder is also
+  given a quantiser ceiling (I/P/B at CRF+4/+6/+8: 24/26/28), a floor
+  under the picture whatever the chip does with the bitrate (read from
+  Android 12 on). The log says what the encoder was asked for; the done
+  sheet shows the file's real size; and a phone file under 40% of the
+  estimate is said to have come out soft. Needs the owner's phone to
+  confirm.
+- ✅ **B: making faster.** The shots asked of Replicate are made four
+  at a time (each takes its price from a purse the run shares, so the
+  spend limit still holds), ElevenLabs lines two at a time; what each
+  came to is seen to in the order they finish. A failure that ends the
+  run - the limit, a refused key - starts no more. Waits that took one
+  after the other now overlap: about three to four times faster on
+  Replicate.
+- ✅ **D: Play and Share.** The done sheet has Play - the phone's own
+  player on the video it just put in Movies (ACTION_VIEW), the default
+  player on a desk - and, on a phone, Share, the system's sheet to send
+  it to YouTube, a messenger or the cloud (ACTION_SEND).
+- ✅ **F: the making sheet redesigned.** No empty picture box: while
+  the script and the voice are made, the export's progress ring; once
+  shots come, the last one made, large. The writer says which chapter
+  it is writing by its title, shown under the stage; the steps sit in a
+  card.
+- ✅ **C: export faster (first part).** An export logs where its time
+  goes every half minute and at the end - reading the sources, drawing,
+  writing to the encoder, per frame. And a certain win: a still shown
+  for seconds was scaled (Lanczos) and converted again for every one of
+  its frames; it is now scaled once and handed out again. The rest waits
+  on the owner's log from the phone.
+- ✅ **E: keep using the app.** The making sheet and the export sheet
+  have Hide while they run: a pill floats over the window - the editor,
+  the list of projects - with the job and how far it is, and a press
+  opens the sheet again. A Long video run belongs to its job's folder,
+  not to the open project (`runs.rs`): it goes on when the person opens
+  another project, holding the phone awake itself; the sheet opened again
+  on that job shows it going on and will not start a second run, which
+  would pay twice; when it ends elsewhere a toast says to open its
+  project and press Create video, which cuts it without paying again.
+
+## After alpha.17 (owner's test, 30 Oct)
+
+alpha.17 works, but a 72 s 1080x1920 export still came out at 0.82
+Mbit/s, as alpha.16 did: the owner's chip kept neither the CBR nor the
+quantiser ceiling. And a one-minute video was slow to export.
+
+- 🚧 **1: the log from a phone.** Settings ▸ Show the log needed a file
+  manager a phone does not have; on a phone it is Share the log, which
+  hands the system block and the end of this run's log - about 90 KB,
+  headed with the phone's model, Android version and its H.264/HEVC
+  encoders - to a messenger or mail. The encoders are also written to
+  the log at start.
+- 🚧 **2: export quality, again.** Where the phone's first encoder of a
+  kind says it takes a constant quality (CQ), the quality setting asks it
+  for one - 77 of 0-100 at CRF 20 - instead of a bitrate, and falls back
+  to the bitrate where the chip will not open so. Otherwise the chip is
+  asked for all the CRF implies (9.2 Mbit/s at 1080p30, not three fifths)
+  and its quantiser floor is set low (CRF-8), out of the way of a chip
+  whose own floor may sit where it wrote everything. Needs the owner's
+  phone, and its log, to confirm.
+- 🚧 **2b: what alpha.18 showed** (owner's HONOR ALT-NX1, a Snapdragon
+  680 with an Adreno 613, Android 15). The export sheet always asked the
+  encoder for an *average* bitrate, which a phone kept as VBR - none of
+  stage 1's CBR, alpha.17's ceiling or alpha.18's constant quality ever
+  reached the chip; 77 s came out at 0.89 Mbit/s. A phone now takes the
+  sheet's bitrate as the quality it comes to (8 Mbit/s at 1080p30 is
+  about CRF 21). Its chip has no constant quality in H.264 and keeps it
+  for HEVC in a component of its own, `c2.qti.hevc.encoder.cq`, after
+  the one Android picks: that one is asked for by name, at 79 of 0-100,
+  and the export sheet writes HEVC on such a phone until another codec
+  is picked. Share the log also carries the run before this one, where
+  an export is when the app was opened again to send it.
+- 🚧 **2c: what alpha.19 showed.** The chip took the constant quality
+  (`quality 79, bitrate_mode=cq codec_name=c2.qti.hevc.encoder.cq`): a
+  clear step up, still short of YouTube and TikTok. Asked for 95 now.
+- 🚧 **3a: export speed, the writer on its own thread.** A 3:17 export
+  took 9:44 on the Adreno 613, 10 frames a second: reading 17 ms,
+  drawing 43 ms and writing 33 ms a frame, one after the other. The
+  encoder now runs on a thread of its own a few frames behind the
+  drawing, so a frame costs about what reading and drawing do: about
+  1.5 times faster. Reading the next frame while this one is drawn is
+  next.
+- ⏳ **Voice and captions out of step in the first minute; the sound
+  dipping or gone for a second now and then** (owner, 3-minute video):
+  waits on when and where, and a short recording.
+- ⏳ **3: export speed.** Waits on the owner's log: its "export done"
+  line says how the time splits between reading, drawing and writing.
+- ⏳ **If the chip still keeps nothing:** a software H.264 encoder
+  (OpenH264) in the phone's FFmpeg as a "best quality, slower" choice.
+
+## The writer as a content writer (owner, 31 Oct)
+
+The owner found the scripts general - not professional, academic or
+educational enough to compete with channels - and every picture in the
+same teal and amber. Three stages, built one after another on the
+branch and sent up as one pull request and one release.
+
+- 🚧 **1: a professional writer.** A Content style choice in the Long
+  video sheet - Documentary, Educational, Academic, Story, News analysis
+  - each with its own brief to the writer and its own kind of pictures.
+  The writer's standing instructions are a head writer's: a cold open,
+  the film's question within twenty seconds, a loop opened every minute
+  or so, chapters that end on a turn, a payoff; concrete over abstract,
+  exact facts or none; a list of phrases every machine script uses, in
+  English and Arabic, never written; vowel marks only where a voice would
+  misread. After each chapter an editor's pass tightens the words at the
+  same length (a scene that drifts keeps the draft, which fits its
+  pictures). The film has one look - its medium chosen for the topic -
+  and each chapter its own named palette; teal and amber are one palette
+  among many. Shot prompts follow one order (subject and action, setting,
+  framing and lens, light, mood), clips one camera move.
+- 🚧 **2: the channel and the facts.** A "Your channel" section in the
+  sheet - name, audience, voice, opening line, closing line, a script to
+  write like - kept and given to the writer with every video. Research
+  on the web first (on by default, about ten cents): before the outline
+  the writer reads up with Anthropic's web search (up to eight searches)
+  and writes notes that cite their sources by number; the outline and
+  every chapter build on them and give no figure that is not there or
+  certain. The sources are kept in the storyboard and listed under the
+  YouTube description. A model without the newer search falls back to
+  the first one; research that fails leaves the writing as before.
+- 🚧 **3: data cards and a better picture model.** A scene that turns on
+  a number, a date or a comparison carries a card - the figure and a
+  label - which the cut draws large in yellow on a dark plate, popping
+  in a moment into the scene for up to four and a half seconds, on a
+  lane of its own under the captions. A Pictures choice beside the image
+  model: Economical (flux-schnell) or Professional (flux-1.1-pro, about
+  four cents a picture), which sets the model and its price.
+
+## Simple, true and well shown (owner, 7 Nov)
+
+After the content writer (#29) the owner asked for scripts that explain
+better - simplify without falsifying - and for better picture prompts,
+from what science communicators and the models' own guides recommend.
+
+- 🚧 **Explaining.** An Audience choice - Beginner, General, Informed -
+  tells the writer how much the viewer knows. Its standing brief now
+  guards against the curse of knowledge: every term in plain words
+  first, one everyday analogy per hard idea carried through, the bottom
+  line before the detail, at most three steps a chapter, comparisons the
+  viewer can picture over bare numbers, sentences under twenty words;
+  scenes joined by "but" and "so", not "and then"; a reminder between
+  open loops of what is coming.
+- 🚧 **Facts.** The research reads the two or three key pages in full
+  (web fetch, up to four) besides searching, and brings back how the
+  best teachers explain the topic - its clearest analogy and the common
+  misconception. The editor's pass checks every number, date, name and
+  quote against those notes and corrects or removes what they do not
+  support, and listens as a newcomer: unexplained terms, skipped steps,
+  breathless sentences.
+- ✅ **"The writer returned an outline with no chapters"** (owner, alpha.22;
+  fixed in alpha.23, #31).
+  A tool answer can give a list as text - in a code fence, or after a
+  line of words - and the outline then read as having no chapters. Such
+  text is decoded into its list, and a list field given as anything else
+  is asked for again instead of being taken as empty.
+- 🚧 **Pictures.** Image prompts of 40-70 words of natural prose, the
+  lens with its aperture, at most two style words of their own (FLUX's
+  guidance); clip motion under twenty words that does not describe the
+  picture again - what moves, then one camera move at the end (the
+  image-to-video guidance); an abstract idea shown through a physical
+  thing that stands for it.
+
+## After alpha.23 (owner's test, 8 Nov)
+
+The owner liked the voice but heard words said wrongly in Arabic, and the
+window stopped answering ("LongCut is not responding") the first time a
+new video was played, the title saying unsaved changes until it did.
+
+- ✅ **Arabic read with its vowels.** A voice reading unvowelled Arabic
+  guesses, and some words come out wrong. After each chapter's editor's
+  pass the writer marks every word with its vowels (tashkeel, case
+  endings, a sukun at the pause) for the voice, word for word; the
+  captions keep the words as written, and stay timed to the voice since
+  the words are the same. A marked reading that changed a word is not
+  used, nor one made for words edited since. A scene written again gets
+  its marks too. The narration itself is written unmarked.
+- ✅ **The window stuck after a cut.** Laying a generated video on the
+  timeline ran the bookkeeping after every edit - the mix handed to
+  playback, the monitor's frame, the art - over all the clips laid so
+  far, hundreds of times, on the event loop; the autosave waited behind
+  it. The cut is now one batch, its bookkeeping done once at the end.
+- ✅ **A log line when the window stops answering.** A watchdog thread
+  notes when the event loop has not beaten for two seconds, with what the
+  studio was handling, and how long the stall lasted: the next one, if
+  any, is found from the shared log.
+
+All three shipped in alpha.24 (#32).
+
+## Animated cards (owner, 8 Nov)
+
+The owner asked whether Claude could make scenes and motion too. It
+writes, it does not paint: Replicate keeps making the pictures, and some
+content needs none - a figure, a comparison, dates, steps, a definition -
+where an animated card says it better, for nothing.
+
+- ✅ **Stage 1: cards among the pictures** (alpha.25, #33). A shot may be an animated card
+  (`ShotKind::Motion`, with a `Graphic`): a heading; a figure counting up;
+  two to four bars to their values; dates along a line; points one by
+  one; a quote and who said it - in the chapter's colour, in the
+  narration's language and script, laid out from the right for Arabic.
+  The writer chooses one where a picture would only decorate, at most one
+  shot in four, never the chapter's first. The job draws the card's
+  backdrop, a deep shade of its colour, and the cut lays its words and
+  plates as the edit's own text clips with keyframes, on lanes of their
+  own; nothing is asked of a model. In the script editor a card shows its
+  heading and its lines to edit. A scene with a card has no data card
+  over it.
+- ✅ **Stage 5: cards only** (alpha.25, #33; now "drawn only", below). A Pictures choice in the Long video sheet:
+  pictures and cards, or cards only - every shot a card, a video for the
+  cost of its script and voice.
+- Later: more cards (a map with a route, a percentage ring, a before and
+  after), a card's colour and layout chosen in the script editor, and a
+  card turned into a picture or back from there.
+
+## Animated explainers (owner, 8 Nov)
+
+The owner showed an explainer made by Claude Code as a motion designer: a
+diagram that builds itself in step with the narration, the way the best
+educational channels explain. Claude writes, it does not paint - so it
+designs the animation as data and the app draws it, frame by frame, on
+the phone as on the desk, for nothing. All four stages are built and
+shipped together, each whole, in alpha.26.
+
+- ✅ **Stage 1: the engine** (`explainer/`). An explainer is a canvas in
+  pixels (1920x1080 for a wide video) of elements - text, rect, circle,
+  line, arrow (bowed, its head arriving last), path, icon, group - and
+  steps: fade, pop, grow from an edge, draw an outline on along its
+  length, type word by word, move, scale, rotate, recolour, count a
+  number up, pulse, shake, and a camera that pans and zooms; six easings.
+  Each frame is written as SVG and rasterised by resvg on the CPU, a few
+  frames at a time on as many threads, and encoded as an H.264 clip (an
+  8 s 1080p clip draws in about 3.5 s on a desk). Arabic is embedded right
+  to left, so a line opening on a figure reads right, and thickened for a
+  heavy weight, its bundled face having one. The bundled faces only, so a
+  frame is the same everywhere. A validator names every fault - ids twice
+  or missing, steps on nothing, unknown icons, colours that are not,
+  words too small or off the canvas.
+- ✅ **Stage 2: the writer as motion director.** A shot may be an
+  explainer (`ShotKind::Explainer`): the chapter call marks it where the
+  narration explains a mechanism, a process, a cause and effect, a
+  comparison of sizes, a route, a structure or a cycle (up to one shot in
+  two for educational and academic videos, one in four for documentary
+  and news, one in six for a story), its prompt saying what the diagram
+  shows beat by beat. Then a call of its own designs each one under a
+  designer's brief and a design system - safe area and the captions'
+  fifth kept clear, hierarchy, palette from the chapter's, grid, diagram
+  patterns, every element entering on the word that names it (`cue`),
+  right-to-left layout for Arabic. Its faults are sent back once to be
+  mended; then two frames are drawn and shown to it as pictures, and it
+  mends what it sees - overlaps, cut words, crowding, imbalance. One that
+  cannot be designed is made as a still of its prompt.
+- ✅ **Stage 3: the icon library.** 191 Lucide icons (ISC), as paths so
+  each can be drawn on stroke by stroke, named in the designer's brief.
+- ✅ **Stage 4: in the run.** Explainers are drawn last, each to the slot
+  the voice and the shots beside it leave (`plan::timing`, the one sum the
+  cut and the job share), its steps on the times their cue words are said
+  - from ElevenLabs' word timings, or by the letters for an untimed voice.
+  A note beside the clip says what it was drawn to; a new timing or a new
+  design draws it again as a take, and Make again draws one. A still of
+  its end is the script editor's thumbnail. In the script editor an
+  explainer shows what it shows, and Design again designs it anew. The
+  Pictures choice is now pictures and drawn shots, or drawn only.
+- ✅ **Look 2: modern and lit** (alpha.27) (owner, after alpha.26: "modern designs,
+  lights and many colours"). Behind the diagram, coloured lights that
+  drift and breathe, drifting specks of light, a faint grid and a
+  vignette; elements may be filled with linear or radial gradients, glow
+  in their own colour and cast soft shadows; ambient motion - float and
+  spin - and a slow camera drift keep a held frame alive. The soft layers
+  are drawn at a quarter size and enlarged, the glows added only where
+  something glows, so a frame costs less than before (about 57 ms at
+  1080p). The designer's brief has a design system for it: seven vivid
+  palettes (neon night, aurora, sunset, ocean, ember, forest, cosmos),
+  glass plates, glow on the few things that matter; the review also
+  sends back a flat or washed-out frame. Animated captions over a drawn
+  shot sit low, under its captions band, never over what it draws.
+- Later: an explainer in a Short drawn for the tall frame (it is cropped
+  from the wide one now); the designer's palette and pace chosen in the
+  sheet; pictures from Replicate placed inside an explainer.
+
+## Against a channel that does it well (owner, after alpha.27; shipped in alpha.28)
+
+The owner set a video of ours (a nuclear bomb, 16:9, flat cards) beside a
+short made the same way by another channel: one illustrated cast from
+shot to shot, a new picture every second or two, the caption's key word
+in colour, tilted labels for the turn, a dense voice. Ours showed bare
+washes of colour where pictures had failed, and the voice misread words.
+
+- ✅ **A failed picture stands in well, and costs less.** A picture a
+  model's safety filter refuses is not asked for again in the same words
+  - each try is paid for - but once more, gently; one that still cannot
+  be made is a designed card - the scene's idea in large words on a glass
+  plate over coloured lights - never a bare wash. The owner's log is to
+  say why so many failed.
+- ✅ **Picture style.** Auto, photo, flat illustration or 3D cartoon,
+  held word for word at the head of every prompt. The writer may give the
+  video a cast of up to four recurring characters, each with a fixed
+  look; a shot that names one has that look added, so they are drawn the
+  same from shot to shot.
+- ✅ **Captions that point.** The writer marks each scene's key words; a
+  caption that holds one shows it in yellow, the rest in white (the text
+  painter now colours chosen words, either direction). A scene's turn may
+  be a sticker: a few words on a red plate, tilted, popping in.
+- ✅ **Pace.** In a Short, and wherever the captions are animated, a
+  still held past a few seconds is cut into pieces that punch in on it,
+  framed tighter and wider by turns, cut straight.
+- ✅ **The voice.** A pronunciation list in the sheet - word = how to say
+  it - rewrites those words before the voice reads them, whatever their
+  vowel marks; ElevenLabs v3, the more expressive, may be chosen, and a
+  line it refuses is read with v2.
+- Next: sound effects under stickers and cuts; the owner's list of
+  misread words.
+
+## From an idea to a video ready to publish (owner, 9 Nov)
+
+The owner's aim: nothing on the market makes content ready to publish;
+LongCut is close. Six stages, each done whole. Publishing straight to a
+platform was weighed and left out by the owner: the system's share sheet
+does it.
+
+- 🚧 **Stage A: sound design.** Three sounds the app makes itself, sample
+  by sample (`sfx.rs`): a whoosh into every scene but the first, a pop
+  under a sticker, a chime under a figure or an animated card - on lanes
+  of their own under the pictures, each at its own level. The music is
+  lifted where nobody speaks for more than a moment and brought back
+  under the voice (`plan::music_keys`). A switch in the sheet.
+- 🚧 **Stage B: a check before export.** One tap already ran from idea
+  to export; what was missing was the look-over. Shots a model could not
+  make are asked for once more before the cut. The cut is then reviewed
+  (`review.rs`): cards standing in for shots, scenes unread and files
+  left out hold the export and are said on the sheet; explainers not
+  designed, pictures alike and a long silence are said and let through.
+- 🚧 **Stage C: the channel's identity.** A colour - captions' key words
+  and stickers take it; a logo, a picture kept small in a top corner
+  over the scenes; an opening and a closing drawn in the colour with the
+  channel's name and its opening and closing lines
+  (`explainer::bumper`), before the first scene and after the last. The
+  sheet's choices are saved under a name as a series and brought back
+  with one pick, the keys left where they are.
+- 🚧 **Stage D: ideas, and several at once.** Suggest ideas proposes
+  five videos for the channel, about what is typed or whatever suits it
+  (`writer::ideas`); one picked becomes the idea; Make them all makes
+  each in turn, the next starting once the one before is cut and its
+  export is over.
+- 🚧 **Stage E: from a source.** Made from takes a page's address - it
+  is fetched and read in full - or a PDF's path, attached, or a text
+  file's, quoted whole; the research then says what the source says and
+  searches only to check. Make 3 Shorts cuts up to three stretches of a
+  finished video, none sharing a scene, each on a timeline of its own
+  (`writer::pick_shorts`).
+- 🚧 **Stage F: other languages.** Make it in this language translates
+  the script a chapter at a time - narration, titles, stickers, key
+  words, cards, and the words drawn in animated cards and explainers,
+  with the cues their steps wait for (`writer::translate`) - as a video
+  of its own that takes over the pictures and the music as they are
+  (`Job::adopt`); its voice is read and its drawn shots drawn again.
+  Arabic is marked with its vowels as any Arabic script is.
+- Known limits: several Shorts are not exported by themselves - one
+  export runs at a time; a logo must be a picture in the project; a
+  batch runs in the open project and stops with the app.
+
+## After alpha.29 (owner's test, 10 Nov)
+
+- 🚧 **Opening a project said the app had stopped.** A long video
+  captioned a few words at a time holds hundreds of titles, all painted
+  when the project first shows, one after another on the window's
+  thread. Each blurred its shadow over the whole frame - nearly all a
+  title cost; the blur is now over the words alone, to the same pixels.
+  The titles' directory kept 400 and swept the rest, so they were
+  painted again at every opening: it keeps 4000. Each title's reveal
+  map, a frame's worth of bytes, is baked when a reveal reads it, not
+  for every title. What is missing is painted on several threads. 300
+  captions at 1080p: 15.4 s to 3.2 s the first time, 1.2 s to nothing
+  after. The watchdog is told each step of opening a project.
+
+## Formats: a kind of video made whole (owner, 10 Nov)
+
+The owner's judgement after alpha.29: much has been added and it still
+cannot be marketed. What is missing is not features but a result that
+can go up as it is. Keys stay the person's own - they pay the services
+directly and see what they spend; the app's own subscription is small,
+and that is the difference from tools that are dear and capped.
+
+- 🚧 **Three formats**, each a writer's brief on top of the content
+  style and the sheet's choices that go with it (`writer::VideoFormat`,
+  the sheet's Format row): **Explained in a minute** - upright, opens on
+  a situation or a question, a few short beats, the same two characters
+  in every picture, ends on a question; **Documentary story** - five
+  minutes, a cold open on the most dramatic moment, acts ending on
+  turns, photographs; **Simple lesson** - three minutes, one concept
+  from an everyday question, one analogy carried through, drawn as it is
+  explained, three things to remember.
+- 🚧 **A format of the person's own.** The owner would not have the app
+  held to three kinds: nobody knows what a user will want to make. The
+  sheet's default is no format; the three are examples to pick or pass
+  over. Your own format is a line in the person's words - how their
+  videos open, what they are made of, how they end - told to the writer
+  over any format, and saved with a series.
+- ⏳ Tuned on the owner's real runs: each format made several times on
+  the phone, the log and the video read, the brief changed until most
+  runs can be published as they are.
+- ⏳ A first-run sheet of three steps - format, idea, make - with the
+  rest under Advanced; a sample of the script and a shot or two before
+  the rest is paid for.
+- ⏳ The voice listened to after it is made: a transcript compared with
+  the script, words said wrong added to the pronunciation list.
+- ⏳ The channel's presenter: a drawn character whose mouth moves with
+  the voice (later, a real face through a lip-sync model on Replicate).
+- ⏳ A library of example scripts per format; prompt caching for the
+  writer's standing briefs.
+
+## After alpha.32 (owner's test, 12 Nov)
+
+The owner's phone exported a five-minute lesson of drawn shots at 1.8
+frames a second, the window stalling for seconds, and the app ended each
+time it was left for another during an export.
+
+- ✅ A report of how far publishes the export's sheet and its pill, not
+  the whole window (#41).
+- ✅ The export's timings split the reading - moving clips, stills,
+  sought - name what reads each clip, and carry the memory (#41).
+- ⏳ The slow reading itself, and the app ending in the background:
+  from the log the build with #41 gives.
+
+## The hook (owner, 13 Nov)
+
+"The base of any successful video": once the script is whole, it is read
+through and the video is given an opening made from it.
+
+- ✅ A last call reads all the narration and writes the hook: one spoken
+  line, two to four words shown large, key words to colour, and the
+  picture the video opens on. It is the video's first scene under the id
+  `hook`, so its voice and picture are made, shown in the script editor
+  and made again like any other.
+- ✅ The cut shows it before the channel's opening, with no fade up from
+  black; the logo starts after the opening.
+- ✅ A switch in the sheet, on unless turned off. Not made for a video of
+  cards alone, which has no picture to open on.
+- ⏳ The hook's picture as the thumbnail; the brief tuned on the owner's
+  real runs.
+
+## Quality and craft (owner, 14 Nov, after a video went up on YouTube)
+
+The owner: the pictures look good in the app and come out compressed; the
+writing needs more creativity; a thumbnail made in ChatGPT is the quality
+wanted.
+
+- ✅ The export's codec picker on a phone whose chip keeps no quality in
+  H.264 says H.264 comes out soft there, and HEVC keeps the quality and is
+  taken by YouTube. The owner's upload was written in H.264 on such a chip.
+- ✅ A third picture quality, Best: FLUX 1.1 Pro Ultra, four megapixels,
+  about six cents a picture; the default stays FLUX Schnell.
+- ✅ The hook's picture and the thumbnail's are asked for as a striking
+  composite: a hero subject with the objects of the story around it,
+  coloured rim light, high contrast, room for words.
+- ✅ The writer's brief: an angle chosen with the outline and held to the
+  end, moments over summaries, a surprise a chapter, a narrator's voice,
+  varied rhythm, a quotable line a chapter, the end calling back to the
+  start, and the stock moves ('imagine...', a list counted out) named and
+  barred; the editor makes lines less ordinary, not only clearer; the
+  lesson ends on its opening question answered rather than on "three
+  things to remember".
+- ⏳ Thumbnail words drawn as in the owner's example: white heavy capitals,
+  the key words on a yellow plate, a line on a red one.
+
+## More than one maker (owner, 14 Nov)
+
+"Don't hold users to Replicate alone": each person picks who makes their
+pictures and their clips, with their own key, and the owner will try each.
+
+- ✅ Pictures by Replicate, OpenAI (`gpt-image-1`, high quality) or Google
+  Gemini (`gemini-2.5-flash-image`; an `imagen-…` model runs as Imagen).
+- ✅ Clips by Replicate, Kling (its own API, a JWT signed with the secret
+  key) or Seedance (BytePlus ModelArk). Kling and Seedance start from a
+  picture the picture maker makes first, as Replicate's image-to-video
+  models do; a clip asked for and not yet saved is followed on the next
+  run rather than paid for again.
+- ✅ Each maker's key and model in the sheet; the keys are left out of a
+  saved series. The sum and the spend limit use an estimate of each
+  service's price.
+- ⏳ Tried on real keys by the owner: the endpoints and model names are
+  from the services' documentation and third-party examples, untested.
+- ⏳ Video from OpenAI (Sora) and Google (Veo); music without Replicate.
+
+## Shorts from a long video, on a phone (owner, 14 Nov)
+
+The owner asked for three Shorts from a five-minute video: one came out,
+and the long video seemed gone - the project opened on the Short alone.
+
+- ✅ Nothing was deleted: each Short is a timeline of its own in the same
+  project, beside the long video. A phone showed no timeline tabs, so
+  there was no way back to it. The phone's top bar now says which video
+  is open when the project holds more than one, and the project sheet
+  lists them all, a tap opening another.
+- ✅ Three Shorts when three are asked for: the writer may pick fewer, or
+  stretches longer than a minute that are refused; the rest are made up
+  from the scenes left, each a run that fits.
+- ✅ A timeline is not deleted on one tap (owner, 20 Nov, after alpha.42:
+  a ten-minute video that cost over 15 € was gone after its Shorts were
+  made). The tab's close button removed the timeline outright, though
+  the strip claimed to ask; on a phone the tap that switches tabs can
+  land on the close button that tap reveals. It asks now, naming the
+  timeline and its clips, as deleting a track does. Nothing paid for is
+  lost with a timeline: the job's folder keeps every shot, voice and
+  card, and Create video lays it again from them.
+
+## A captions file to upload (owner, 20 Nov)
+
+Facebook advises uploading the captions as a file rather than burning
+them into the picture: its player shows a file's captions at the size and
+in the language the viewer picks, and reads them.
+
+- 🚧 Every cut the sheet lays - the long video and each Short - writes
+  its captions as `<title>.srt` (`concat-generate::srt`): the cards the
+  cut shows, at the same times, or the ones it would show when "Captions
+  from the narration" is off. On a desk it sits in the job's folder,
+  beside the exported video; on a phone it is copied to Download/Concat
+  (`ConcatFiles.publishDownload`, through the media store), where an
+  upload page's file picker finds it. The sheet says where.
+
+## Editorial intelligence, for any topic (owner, 20 Nov)
+
+The owner asked for videos that explain rather than describe - researched,
+argued, reviewed - on any subject, with nothing written for one topic.
+Much was there already: research on the web with sources, facts, opinions
+and disputed points kept apart, a source document read instead of the
+model's memory, an outline with an angle, an editor's pass on each
+chapter, explainers (charts, diagrams, maps) and a review of the cut.
+What "Deeper analysis" (a switch under research, off by default) adds, in
+`concat-generate::editorial` and `writer::write`:
+
+- 🚧 Research chosen for the kind of subject (science, history, politics,
+  economics, philosophy, a tutorial...), and the important claims one by
+  one with source, publisher, date, the passage that holds them and their
+  standing: verified, interpretation, hypothesis, unverified. The writer
+  is told to say each only as far as it stands.
+- 🚧 An analysis before the outline: first what kind of explanation the
+  subject needs, then those of the questions that matter which apply -
+  central question, thesis, why it matters, how it works and why,
+  assumptions, distinctions, evidence, objections, limits, conclusion,
+  what the viewer should understand - then the opening and beats that
+  suit that kind of subject and the kind of pictures that explain it.
+  Every call after it is told it.
+- 🚧 An editor's review of the whole script and its pictures, judged by
+  what the subject needs (accuracy, depth, clarity, logic, evidence,
+  precision, narrative, audience, visuals, purpose), naming scenes; the
+  serious ones (and all, when it fails the script) are written again with
+  its note and the research, up to six, once. Analysis and review are kept
+  in `storyboard.json` (`editorial`, absent for older scripts).
+- 🚧 The script editor shows them: the analysis, each part under its
+  heading, and the review - passed or not, whether the ending follows,
+  the editor's note - at the top; each scene the review held against
+  carries its note, marked when the scene was written again from it.
+- Later: claims linked to the scenes that use them.
+
+## Pictures that show what is said (owner, 21 Nov)
+
+The owner found pictures with little to do with the narration - a person
+or a cinematic backdrop where the words named a thing, a figure or an
+idea. Already there: each scene's shots written from its own words, not
+the topic; three kinds of visual (pictures and clips, explainers -
+charts, maps, diagrams, timelines - and animated cards); shots timed to
+the words of the voice; recurring characters named in every prompt.
+Added (`concat-generate::visual`, the writer's picture rules):
+
+- 🚧 Every shot carries its `idea` (what the viewer must understand of
+  the words over it) and the `elements` it must show; the writer decides
+  them first and writes the prompt from them - literal for concrete
+  things, an explainer or card for processes and figures, a clear
+  metaphor only for the abstract; no decorative pictures, no person who
+  adds nothing.
+- 🚧 "Check every picture against its narration" (off by default): once
+  the shots are made, each picture a model drew (a clip by its start
+  still) is shown to the writer's model with its narration, idea and
+  elements, and scored 0-10 with what is there, missing and wrong
+  (`semantic_alignment_score`, `required_elements_present`,
+  `missing_elements`, `visual_mismatches`, `is_acceptable`,
+  `improvement_instructions`). A still under the threshold (7 unless
+  set) is drawn again with what was missing - once unless set, only that
+  shot - and its amended prompt kept; a failed clip is said, not remade.
+  What could not be looked at is "not checked", never passed. The report
+  is kept in `picture-checks.json` and summed up in a notice.
+- 🚧 The script editor shows each picture's last check at its shot -
+  score, what is missing, what is wrong, how to draw it, or why it was
+  not checked - beside the shot's Make again; a take made since drops
+  its check.
+- Later: let the person set the threshold and attempts in the sheet.
+
+## Fewer Actions minutes (owner, 21 Nov)
+
+GitHub stopped starting any workflow on the repository after 23:29 on 20
+Nov - likely the account's Actions minutes, which macOS runners spend ten
+times as fast as Linux ones. The macOS compile in ci.yml and the two iOS
+jobs in mobile.yml now run only for a release (release.yml) or when started
+by hand, not on every pull request and push to main; Linux, Windows and
+Android still check each pull request.
+
+## Audit and priorities (owner, 14 Nov)
+
+The owner, after planning with ChatGPT: build the new on the engines that
+work, never rebuild one without a specific, proven technical problem. Long
+videos up to 60 minutes and the ElevenLabs voice work and stay as they are.
+
+Where each engine stands (existing and working / existing, to improve /
+new):
+
+1. **Research.** Working: `writer::research` reads up on the web before
+   writing (8 searches, 4 pages read in full), gives sources, and makes a
+   video from one source (a page, a PDF, a text file); the editor checks
+   every figure against the notes. To improve: the notes are not shown or
+   kept to read and edit; Suggest ideas does not search the web. New: what
+   is rising on a topic, what the channels in the niche have already made,
+   a library of research kept per channel.
+2. **Channel.** Working: one channel profile (name, audience, voice,
+   opening and closing lines, example script), its colour, logo, opening
+   and closing cards, and series - the sheet's choices saved under a name,
+   the ElevenLabs voice among them. To improve: one channel only; a voice
+   per channel only by way of a series. New: several channels, each with
+   its own voice, look, formats and history of videos.
+3. **Script.** Working: outline, chapters, the editor's pass, fact check,
+   Arabic vowel marks, formats and the person's own, the angle, the hook
+   written last (#42), explainers. To improve: the briefs tuned on real
+   runs (owner found the writing not creative enough; #42 is the first
+   answer).
+4. **Smart Shorts.** Working and automatic: from a finished long video the
+   writer picks up to three stretches of a minute at most, scenes in a
+   row, each with a hook, and each is cut on a 9:16 timeline of its own
+   from the files already made, nothing paid again. To improve: three
+   always come out (#42), the phone could not go back to the long video
+   (#42), the pick goes by written seconds not the voice's, the wide
+   pictures are filled by a centre crop, each Short is exported by hand.
+   New: Shorts from any footage, not only a generated video.
+5. **Export.** Working: the export sheet, a phone's constant-quality HEVC,
+   export in the background with a notification, share. To improve: a
+   phone's export of drawn shots is slow and the app ends in the
+   background (#41 measures it); H.264 soft on some chips (#42 says so).
+   New: a queue that exports a long video and its Shorts in one go,
+   presets per platform.
+6. **Publishing and analytics.** Working: title, description with
+   chapters, tags, thumbnail words and picture, a thumbnail timeline. New:
+   analytics. Uploading straight to YouTube was set aside by the owner on
+   9 Nov ("no real value"); to be asked again before it is built.
+
+## New features, one at a time (owner, 14 Nov)
+
+The owner: the ideas are to be added to the app as it is, in the way that
+fits it - nothing changed, nothing rebuilt. Order: 1 channels, 2 research
+before writing, 3 smart Shorts, 4 an export center, 5 a check before
+publishing; analytics later, asked first.
+
+1. **Channels** (in progress, on the branch after #42). The channel
+   profile and the series already were a channel; added to them: the
+   subjects it covers and its editorial rules, told to the writer in every
+   call and in Suggest ideas; a memory of what each channel made (the
+   last sixty titles, kept apart from the series), so a video is not made
+   twice and an earlier one can be referred back to; how many Shorts a
+   video gets, one to five; a Channel list at the top of the Long video
+   sheet that brings a channel back with one pick; and **la lógica**, the
+   channel the app comes with ready to use (Spanish, cinematic documentary
+   in 16:9, ten minutes, analytical and non-partisan, on Spanish politics,
+   philosophy, psychology, society and the economy; gold; hook on; four
+   Shorts). Picking it keeps the keys, the voice and the makers in use.
+   Also mended: bringing back a series wiped the keys of the makers added
+   in #42 (OpenAI, Gemini, Kling, Seedance). Not yet: a palette of more
+   than one colour (la lógica's black, gold, red and blue), a voice chosen
+   by its description.
+2. **Research before writing** (in progress, on the branch after #43). A
+   Research first button in the Long video sheet reads up on the idea
+   alone; its notes appear in the sheet, to read and correct, and are kept
+   with the video (`research.json`, and `research.txt` with the sources
+   to read on any device). The notes come in the video's language, under
+   FACTS, OPINIONS (each with whose it is) and DISPUTED (the sides); the
+   writer is told to say a fact as a fact, an opinion as someone's, and a
+   disputed point with its sides. The script is written from the notes
+   kept - corrected or not - and a script written again does not pay for
+   the research again. A run without Research first reads up as before
+   and keeps what it found. Not yet: a source per line checked against
+   its page, research kept per channel across videos.
+
+   Also in this pull request: the release of v0.2.8-alpha.33 failed twice
+   in Engine tests and lints, the runner dying mid-clippy with no log after
+   restoring the main branch's large cache, where pull requests (near-empty
+   cache) passed. Clearing disk room did not help: the same death came on
+   this pull request once its cache was warm, so it is memory - with a warm
+   cache every crate, the app's Slint code among them, is checked at once.
+   The job now adds 8 GB of swap and runs clippy two crates at a time.
+   alpha.33 is left; the next tag is cut from main once this is merged.
+3. **Smart Shorts** (in progress, on the branch after #44). The writer is
+   asked for the strongest moments, not the start: each standing alone
+   (nothing it leans on unexplained), opening on a grip and ending on a
+   payoff or a line worth quoting, one idea each and a different idea per
+   Short. Each Short now has a title of its own as well as its hook; its
+   timeline is named by it. The minute is measured in the voice's
+   seconds - the scenes' lengths as read, where the voice was made - not
+   the written ones, so a Short no longer runs past a minute or stops
+   short. A wide still on a tall Short is reframed: the frame travels
+   across the picture, one way then the other by turns, instead of
+   pushing in on its middle, so most of the picture is seen. Not yet: a
+   moving clip reframed (it stays centred), each Short's own description
+   and hashtags (with the export center).
+4. **Export center** (in progress, on the branch after #45). Export
+   everything, in the Long video sheet once a video is made: every
+   timeline of the project that holds anything - the long video and each
+   Short - written one after another into the video's folder (a phone
+   moves each to its gallery as any export), the timeline that was open
+   brought back at the end; a file that fails stops the rest. Beside them
+   are what goes up with each: publishing.txt (YouTube's title,
+   description with chapters, tags) and the thumbnail as before, and now
+   shorts.txt - each Short's title, hook and hashtags (the video's tags
+   and #Shorts), kept as the Shorts are cut. Each file is written at its
+   own frame (16:9 for YouTube, 9:16 for Shorts, TikTok and Reels) with
+   the export sheet's settings. Not yet: one setting per platform beyond
+   the frame, a Short's own description written by the writer.
+   The release of alpha.35 died the same way once more with clippy at two
+   crates at a time (alpha.34 passed with it): clippy now runs one crate
+   at a time, as it does on a 16 GB machine without fail, with 75 minutes.
+   alpha.36 built on every platform (its two Apple silicon jobs waited
+   four tries for a macOS runner) and then its notes stopped the
+   publish: its only commit was a CI fix, which the notes leave out, and
+   an empty list failed the script. A tag with nothing to list now gets
+   notes with the downloads alone; alpha.38 carries the fix (#48).
+   alpha.38 then waited on a macOS runner again, twice. A release no longer
+   waits on one: it leaves CI's macOS compile out (its own macOS build
+   compiles and starts the app), and publishes without a macOS or iOS
+   bundle whose job did not pass, naming it in the notes; every other job
+   must still pass.
+5. ✅ **A check before publishing.** (alpha.40) Warnings, never a block: a claim with no
+   source, a repeat, music and picture rights, a length wrong for the
+   platform, the AI disclosure. Done on the branch (`checklist.rs`): a
+   Check before publishing button beside Export everything, which also
+   runs it first and goes on. It says scenes that state figures when the
+   video lists no source; the research's disputed points; a title close
+   to one the channel made (its memory); music from the bin (whether it
+   may be used) or made by MusicGen (a non-commercial licence); an
+   upright video past the 3 minutes Shorts and Reels take; and realistic
+   AI pictures or clips (YouTube's altered or synthetic content, TikTok's
+   AI-generated label). Pictures are AI-made, so no stock rights apply.
+   On 17 November Microsoft's ONNX Runtime repository vanished from
+   GitHub, releases and all, and every build that fetched the runtime from
+   it failed. Its NuGet package carries the same native builds for every
+   desktop platform: `scripts/ci/onnxruntime.sh` takes the one a job needs
+   from it, pinned by digest in deps.lock, laid out as the release
+   archives were.
+6. ✅ **ChatGPT as a writer (owner, 19 Nov; alpha.41).** A friend testing the app uses
+   the OpenAI API: the script and the picture prompts may be written by
+   ChatGPT as well as Claude, picked in the sheet, each with its own key.
+   Done on the branch: Script writer has a Written by choice, Claude or
+   ChatGPT; ChatGPT writes with the OpenAI key (the pictures' key too)
+   and a model field, `gpt-5.4` unless another is typed. Every call the
+   writer makes - research, outline, chapters, the editor's pass, hooks,
+   picture prompts, explainers and their review, Shorts, publishing,
+   translation, ideas - goes through `chatgpt.rs` when the model is
+   OpenAI's: the Responses API, the answer's tool as a function, OpenAI's
+   web search for the research (no web fetch; the search opens pages),
+   pictures and a source PDF as input items. Who writes stays the
+   person's when a series is brought back. Not yet tried against the
+   real API: the default model's name could not be checked from here.
+7. ✅ **Effects from pmndrs/postprocessing (owner, 19 Nov; alpha.42).** The owner
+   asked whether react-postprocessing could serve the app. It cannot be
+   used as it is - React and three.js in a browser, WebGL - and most of
+   its effects the app already has (bloom, vignette, chromatic
+   aberration, glitch, grain, pixelate, halftone, LUT, blur, scanlines in
+   VHS, tone mapping); SSAO, outline and antialiasing need a 3D scene.
+   Two it lacks are ported as WGSL packages (zlib, credited in the
+   shaders): God Rays - shafts of light from a bright point, the
+   picture's own highlights as the light - and Shock Wave - a ring that
+   bends the picture as it spreads from a point over the clip's first
+   moments. Tilt-shift and a grid or scanline overlay could follow.
+
+## Done since alpha.14
+
+- ✅ Pictures saved as clips (#23): Replicate's image addresses carry no
+  file type and a shot was saved as `.mp4`; a download is named for what
+  its bytes hold, and a misnamed shot is renamed when the video is cut
+  again.
+
+## Planned
+
+- ⏳ **Real test with paid keys**: a full run with Replicate (images and
+  clips) and ElevenLabs on the phone, by the owner; fix what it shows.
+
+## Decided against
+
+- ❌ **HeyGen presenter avatar**: too expensive per minute (about $1-4).
+  Revisit only if a much cheaper talking-head service appears.
+
+## Notes for whoever continues
+
+- Releases: tag `v0.2.8-alpha.N` on `main` as a pre-release; the Release
+  workflow builds everything and signs the Android APK with the owner's
+  key (repository secrets). Never create a new signing key: updates would
+  stop installing over the old app.
+- The owner tests on an Android phone and writes in Arabic.
