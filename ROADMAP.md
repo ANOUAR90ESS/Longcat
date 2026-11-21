@@ -732,8 +732,15 @@ cost is shown before, and the person decides.
    the writer's judgment, said to be - the channel it would be, and its
    first five videos. "Use this niche" saves it as a channel of its own,
    picked, its first videos the ideas list.
-2. **The identity**: the channel's look - colours, logo, banner,
-   thumbnail style - drawn for it.
+2. **The identity** - done. "Design the channel's look" in the sheet's
+   Channel section (`concat_generate::identity`): the writer designs two
+   colours, a tagline, the page's description and the style every
+   thumbnail keeps to, from the channel as described; its logo (square,
+   for YouTube's circle) and banner (wide, its subject in the middle) are
+   drawn by the picture maker chosen, into a folder of the channel's own
+   under the app's data. The colour becomes the videos' accent, the logo
+   their corner mark, and the thumbnail style is added to every
+   thumbnail's prompt; all of it is kept with the channel.
 3. **A plan of 30 days**: long videos and Shorts in order, each with its
    angle, none made before; the cost of the whole plan shown first.
 4. **Making it**: the plan's videos made one after another, each to look

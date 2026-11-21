@@ -22,6 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use concat_generate::budget::{self, Totals};
 use concat_generate::checklist;
 use concat_generate::cost::{self, Estimate, Prices};
+use concat_generate::identity;
 use concat_generate::job::{Costs, Idea, Job, Made, Remade, Status, Step};
 use concat_generate::makers;
 use concat_generate::niche;
@@ -39,7 +40,7 @@ use concat_project::commands::NewMedia;
 use concat_project::model::MediaKind;
 use slint::SharedString;
 
-use crate::host::{on_ui, on_ui_in_project, spawn, spawn_in_project};
+use crate::host::{image_at, on_ui, on_ui_in_project, spawn, spawn_in_project};
 use crate::i18n::{t, tf};
 use crate::panes::Msg;
 use crate::panes::export::ExportMsg;
@@ -166,6 +167,9 @@ pub enum GenerateMsg {
     /// The video translated: its new idea, its storyboard and its
     /// language's row, or why not.
     Translated(Box<Result<(String, Storyboard, usize), String>>),
+    /// The channel's look designed, its logo and banner drawn when a
+    /// picture maker is chosen (else why not), or why there is none.
+    Looked(Box<Result<(identity::Identity, Result<(PathBuf, PathBuf), String>), String>>),
     /// Use niche `n` of those proposed: a channel of its own, picked.
     ChooseNiche(i32),
     /// The niches proposed, or why there are none.
@@ -221,6 +225,9 @@ pub struct GeneratePane {
     /// Finding a niche for a new channel: shown, what the person cares
     /// about, and the niches proposed, the most worth first.
     niche_open: bool,
+    /// The channel's logo and banner as the sheet shows them: loaded once
+    /// as the sheet opens or the look is drawn, not at every redraw.
+    look_pictures: (slint::Image, slint::Image),
     niche_interests: String,
     niches: Vec<niche::Niche>,
     /// The ideas still to make, in a batch; the one being made is not
@@ -331,6 +338,7 @@ impl Default for GeneratePane {
             source: String::new(),
             ideas: Vec::new(),
             niche_open: false,
+            look_pictures: Default::default(),
             niche_interests: String::new(),
             niches: Vec::new(),
             queue: Vec::new(),
@@ -414,6 +422,7 @@ impl GeneratePane {
                     self.notes = idea.notes;
                 }
                 self.ask_picture_models(studio);
+                self.load_look_pictures(studio);
                 self.look(studio);
             }
             GenerateMsg::Close => {
@@ -585,6 +594,7 @@ impl GeneratePane {
                             && studio.prefs.generate.apply_template(row)
                         {
                             studio.prefs.save(&studio.host.dirs);
+                            self.load_look_pictures(studio);
                             self.tally(studio);
                         }
                         return;
@@ -827,6 +837,7 @@ impl GeneratePane {
                 5 => self.research_first(studio),
                 6 => self.export_all(studio),
                 8 => self.find_niches(studio),
+                10 => self.design_look(studio),
                 9 => self.niche_open = !self.niche_open,
                 7 => {
                     let found = self.check_before_publishing(studio);
@@ -846,6 +857,13 @@ impl GeneratePane {
                 }
             }
             GenerateMsg::ChooseNiche(index) => self.choose_niche(studio, index.max(0) as usize),
+            GenerateMsg::Looked(result) => {
+                self.running = false;
+                match *result {
+                    Ok((look, drawn)) => self.take_look(studio, look, drawn),
+                    Err(error) => self.failed(error),
+                }
+            }
             GenerateMsg::Researched(result) => {
                 self.running = false;
                 match *result {
@@ -2281,6 +2299,7 @@ impl GeneratePane {
         self.publishing_busy = true;
         let shots = shots_of(&prefs);
         let voiced = self.voice_row(studio) != 0;
+        let thumbnail_style = prefs.thumbnail_style.clone();
         spawn_in_project(
             move || {
                 let mut publishing = writer::publishing(&board, &key, &model)?;
@@ -2294,8 +2313,13 @@ impl GeneratePane {
                     .map(|placements| plan::chapter_starts(&board, &placements))
                     .unwrap_or_default();
                 job.keep_publishing(&publishing)?;
+                // Every thumbnail of the channel in its own style.
+                let prompt = match thumbnail_style.trim() {
+                    "" => publishing.thumbnail_prompt.clone(),
+                    style => format!("{}. {style}", publishing.thumbnail_prompt.trim()),
+                };
                 let picture = job
-                    .thumbnail_picture(&board, &shots, &publishing.thumbnail_prompt)
+                    .thumbnail_picture(&board, &shots, &prompt)
                     .and_then(|path| {
                         concat_host::media::probe(&path.to_string_lossy())
                             .map(|summary| summary.to_new_media())
@@ -2687,7 +2711,101 @@ impl GeneratePane {
         self.niches.clear();
         self.niche_open = false;
         studio.notify(&tf("generate.nicheChosen", &[&chosen.name]), false);
+        self.load_look_pictures(studio);
         self.tally(studio);
+    }
+
+    /// Designs the channel's look on a worker - colours, tagline, page
+    /// description, thumbnail style - and draws its logo and banner with
+    /// the picture maker chosen, into the channel's own folder.
+    fn design_look(&mut self, studio: &mut Studio) {
+        let prefs = studio.prefs.generate.clone();
+        let (key, model) = prefs.writer();
+        if key.trim().is_empty() {
+            self.message = need_writer_key(&prefs);
+            return;
+        }
+        let channel = [
+            ("Channel", &prefs.channel_name),
+            ("Who watches", &prefs.channel_audience),
+            ("How it sounds", &prefs.channel_voice),
+            ("What it covers", &prefs.channel_topics),
+            ("Rules", &prefs.channel_rules),
+        ]
+        .iter()
+        .filter(|(_, value)| !value.trim().is_empty())
+        .map(|(label, value)| format!("{label}: {}", value.trim()))
+        .collect::<Vec<_>>()
+        .join("\n");
+        let language = LANGUAGES[prefs.language.min(LANGUAGES.len() - 1)];
+        let dir = identity::folder(&studio.host.dirs.data, &prefs.channel_name);
+        let pictures = match shots_of(&prefs) {
+            Shots::Models { pictures, .. } => Some(pictures),
+            _ => None,
+        };
+        self.begin(t("generate.lookBusy"));
+        self.phase = 0;
+        spawn_in_project(
+            move || {
+                let look = identity::design(&channel, language, &key, &model)?;
+                let drawn = match &pictures {
+                    Some(pictures) => identity::draw(&look, pictures, &dir),
+                    None => Err(t("generate.lookNoPictures")),
+                };
+                Ok((look, drawn))
+            },
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::Looked(Box::new(result))))
+            },
+        );
+    }
+
+    /// Keeps the channel's look: its colours and words in the channel's
+    /// choices, its logo in the corner of every video and its banner, and
+    /// in the channel saved under its name when there is one.
+    fn take_look(
+        &mut self,
+        studio: &mut Studio,
+        look: identity::Identity,
+        drawn: Result<(PathBuf, PathBuf), String>,
+    ) {
+        let prefs = &mut studio.prefs.generate;
+        prefs.brand_color = look.colour.clone();
+        prefs.brand_second = look.second.clone();
+        prefs.channel_tagline = look.tagline.clone();
+        prefs.channel_about = look.about.clone();
+        prefs.thumbnail_style = look.thumbnail_style.clone();
+        match drawn {
+            Ok((logo, banner)) => {
+                prefs.brand_logo = logo.to_string_lossy().into_owned();
+                prefs.brand_banner = banner.to_string_lossy().into_owned();
+                studio.notify(&t("generate.lookReady"), false);
+            }
+            Err(why) => {
+                log::warn!("generate: the channel's pictures: {why}");
+                studio.notify(&tf("generate.lookUndrawn", &[&why]), true);
+            }
+        }
+        let prefs = &mut studio.prefs.generate;
+        let name = prefs.channel_name.trim().to_owned();
+        if !name.is_empty() && prefs.templates.iter().any(|kept| kept.name == name) {
+            let channel = prefs.as_template(&name);
+            prefs.keep_template(channel);
+        }
+        studio.prefs.save(&studio.host.dirs);
+        self.load_look_pictures(studio);
+    }
+
+    /// Loads the channel's logo and banner for the sheet to show.
+    fn load_look_pictures(&mut self, studio: &Studio) {
+        let load = |path: &str| {
+            Some(path)
+                .filter(|path| !path.trim().is_empty())
+                .and_then(|path| image_at(Path::new(path)))
+                .unwrap_or_default()
+        };
+        let prefs = &studio.prefs.generate;
+        self.look_pictures = (load(&prefs.brand_logo), load(&prefs.brand_banner));
     }
 
     /// The niches proposed, as the sheet lists them.
@@ -3438,6 +3556,26 @@ impl GeneratePane {
             can_short: self.all_made && !self.running && away.is_none(),
             results: self.all_made && away.is_none(),
             niche_open: self.niche_open,
+            look_words: [
+                prefs.channel_tagline.trim(),
+                prefs.channel_about.trim(),
+                prefs.thumbnail_style.trim(),
+            ]
+            .iter()
+            .filter(|words| !words.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join("\n\n")
+            .into(),
+            look_colours: [prefs.brand_color.trim(), prefs.brand_second.trim()]
+                .iter()
+                .filter(|colour| !colour.is_empty())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" · ")
+                .into(),
+            look_logo: self.look_pictures.0.clone(),
+            look_banner: self.look_pictures.1.clone(),
             niche_interests: self.niche_interests.as_str().into(),
             niches: std::rc::Rc::new(slint::VecModel::from(self.niche_rows())).into(),
             shorts: std::rc::Rc::new(slint::VecModel::from(

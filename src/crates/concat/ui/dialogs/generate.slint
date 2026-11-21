@@ -193,6 +193,12 @@ export struct GenerateSheetData {
     niche-open: bool,
     niche-interests: string,
     niches: [NicheRow],
+    /// The channel's look: its words (tagline, page description, thumbnail
+    /// style), its colours, its logo and its banner; empty until designed.
+    look-words: string,
+    look-colours: string,
+    look-logo: image,
+    look-banner: image,
     /// The video's Shorts, each made into a project of its own when
     /// asked; empty until they are picked, and while there are no results.
     shorts: [ShortResult],
@@ -353,7 +359,7 @@ export component GenerateDialog inherits Modal {
     /// 2 make the video in another language, 3 save the choices as a
     /// series, 4 pick the video's Shorts, 5 research first, 6 export
     /// everything, 7 check before publishing, 8 suggest niches, 9 show or
-    /// hide finding a niche.
+    /// hide finding a niche, 10 design the channel's look.
     callback act(kind: int);
     callback publish();
     callback cancel();
@@ -1283,6 +1289,57 @@ export component GenerateDialog inherits Modal {
                     // kept; and whether it reads up on the web first.
                     DialogSection {
                         title: I18n.t("generate.channel");
+
+                        // The channel's look, designed for it and drawn:
+                        // colours, tagline, page description, thumbnail
+                        // style, logo and banner.
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.designLook");
+                                glyph: Glyph.sparkle;
+                                clicked => { root.act(10); }
+                            }
+                        }
+
+                        Text {
+                            text: I18n.t("generate.designLookHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.look-colours != "": Text {
+                            text: root.data.look-colours;
+                            color: Theme.accent;
+                            font-size: Theme.fs-sm;
+                        }
+
+                        if root.data.look-logo.width > 0 || root.data.look-banner.width > 0: HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            if root.data.look-logo.width > 0: Image {
+                                source: root.data.look-logo;
+                                width: 72px;
+                                height: 72px;
+                                image-fit: cover;
+                            }
+
+                            if root.data.look-banner.width > 0: Image {
+                                source: root.data.look-banner;
+                                width: 128px;
+                                height: 72px;
+                                image-fit: cover;
+                            }
+                        }
+
+                        if root.data.look-words != "": Text {
+                            text: root.data.look-words;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
 
                         HorizontalLayout {
                             spacing: 10px;

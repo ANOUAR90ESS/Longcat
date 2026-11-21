@@ -35,6 +35,7 @@ pub mod cost;
 pub mod director;
 pub mod editorial;
 pub mod explainer;
+pub mod identity;
 pub mod job;
 pub mod makers;
 pub mod motion;

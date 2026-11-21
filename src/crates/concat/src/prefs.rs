@@ -349,6 +349,16 @@ pub struct GeneratePrefs {
     pub brand_logo: String,
     /// The channel's opening and closing drawn onto every video.
     pub brand_bumpers: bool,
+    /// The channel's second colour, `#rrggbb`; empty for none.
+    pub brand_second: String,
+    /// The channel's banner, a picture's path; empty for none.
+    pub brand_banner: String,
+    /// A line under the channel's name.
+    pub channel_tagline: String,
+    /// The channel page's description.
+    pub channel_about: String,
+    /// What every thumbnail keeps to, added to its picture's prompt.
+    pub thumbnail_style: String,
     /// The series saved: each a name and the sheet's choices as they
     /// were, to bring back with one pick.
     pub templates: Vec<Template>,
