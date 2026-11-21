@@ -716,6 +716,26 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## The picture check, four at a time (owner, 21 Nov)
+
+Done. "Checking picture 3 of 9 against its narration" took longer than
+it should: each picture waited on the answer about the one before. The
+pictures are now looked at four at a time (`visual::LOOKERS`), and only
+those that fail are drawn again, one at a time, after; stopping still
+stops between pictures.
+
+## Picture models picked from a list (owner, 21 Nov)
+
+Done. The owner's run stopped at its first picture: "OpenAI answered 400:
+The model 'gbt-image-2' does not exist" - a name typed by hand, one
+letter wrong. The sheet's image model for OpenAI and Gemini is now a list
+of the models the key can run, asked of the maker itself (OpenAI's
+`/v1/models`, Gemini's `models`); a model chosen before that the account
+cannot run gives way to the first it can. The name is typed only while
+there is no list (no key yet, or the maker would not answer). GPT Image 2
+is the default OpenAI picture model: GPT Image 1 is refused on the
+owner's account.
+
 ## A new home: ANOUAR90ESS/Longcat (owner, 21 Nov)
 
 GitHub Actions stayed disabled on ANOUAR90ESS/Concat ("Actions has been

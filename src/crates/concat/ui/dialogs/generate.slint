@@ -138,6 +138,13 @@ export struct GenerateSheetData {
     picture-key: string,
     picture-model: string,
     picture-model-default: string,
+    /// The picture models the key can run, the default first; empty
+    /// until they come or when they cannot be listed, and then the model
+    /// is typed. The chosen one's place in them, -1 for none; and what
+    /// to say of the list: on its way, or why there is none.
+    picture-models: [string],
+    picture-model-index: int,
+    picture-models-note: string,
     /// The chosen clip maker's key, Kling's secret, the model and its
     /// default.
     clip-key: string,
@@ -296,7 +303,8 @@ export component GenerateDialog inherits Modal {
     callback text-edited(field: int, text: string);
     /// Which choice: 0 minutes, 1 language, 2 aspect, 3 voice, 4 shots,
     /// 5 music, 6 clips, 7 caption look, 8 content style, 9 picture quality,
-    /// 10 audience level, 11 visuals (pictures and cards, or cards only).
+    /// 10 audience level, 11 visuals (pictures and cards, or cards only),
+    /// 24 the picture model, from the list the key can run.
     callback choice-changed(field: int, index: int);
     /// Which switch: 0 captions, 1 titles, 2 export when done, 3 research
     /// on the web.
@@ -932,7 +940,19 @@ export component GenerateDialog inherits Modal {
                             }
                         }
 
-                        if root.data.shots == 1 && root.data.picture-maker != 0: DialogRow {
+                        // The models the key can run, to pick from: a name
+                        // typed by hand fails at the first picture when it
+                        // is wrong. Typed only while there is no list.
+                        if root.data.shots == 1 && root.data.picture-maker != 0 && root.data.picture-models.length > 0: DialogRow {
+                            label: I18n.t("generate.imageModel");
+                            Select {
+                                options: root.data.picture-models;
+                                current: root.data.picture-model-index;
+                                changed(index) => { root.choice-changed(24, index); }
+                            }
+                        }
+
+                        if root.data.shots == 1 && root.data.picture-maker != 0 && root.data.picture-models.length == 0: DialogRow {
                             label: I18n.t("generate.imageModel");
                             Field {
                                 value: root.data.picture-model;
@@ -940,6 +960,13 @@ export component GenerateDialog inherits Modal {
                                 placeholder: root.data.picture-model-default;
                                 edited(text) => { root.text-edited(22, text); }
                             }
+                        }
+
+                        if root.data.shots == 1 && root.data.picture-maker != 0 && root.data.picture-models-note != "": Text {
+                            text: root.data.picture-models-note;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
                         }
 
                         if root.data.shots == 1: DialogRow {

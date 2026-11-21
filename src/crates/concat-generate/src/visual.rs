@@ -294,6 +294,11 @@ pub fn read_report(job: &crate::job::Job) -> Option<Report> {
 /// prompts drawn again are kept in `board`, so a later remake starts from
 /// them. Stops between pictures when `stop` says to. The report is kept in
 /// the job's folder, and what was spent on redrawing is in it.
+///
+/// The pictures are looked at [`LOOKERS`] at a time: one by one, a long
+/// video's forty pictures were minutes of waiting on one answer after
+/// another (the owner, 21 Nov). Only the ones that fail are drawn again,
+/// one at a time, after.
 #[allow(clippy::too_many_arguments)]
 pub fn check_and_mend(
     job: &crate::job::Job,
@@ -312,21 +317,20 @@ pub fn check_and_mend(
         ..Report::default()
     };
     let mut spent = 0.0;
-    let todo: Vec<(String, usize)> = drawn(board)
+    let todo: Vec<(usize, usize, usize)> = drawn(board)
         .iter()
-        .map(|(scene, index, _)| (scene.id.clone(), *index))
+        .filter_map(|(scene, index, _)| {
+            let (c, s) = board.position_of(&scene.id)?;
+            Some((c, s, *index))
+        })
         .collect();
-    let of = todo.len();
-    for (n, (id, index)) in todo.into_iter().enumerate() {
-        if stop() {
+    let looked = look_all(job, board, &todo, key, model, threshold, progress, stop);
+    for ((c, s, index), check) in todo.into_iter().zip(looked) {
+        let Some(mut check) = check else {
+            // Stopped before it was looked at.
             break;
-        }
-        progress(n + 1, of);
-        let stem = shot_stem(&id, index);
-        let Some((c, s)) = board.position_of(&id) else {
-            continue;
         };
-        let mut check = look(job, board, c, s, index, key, model, threshold);
+        let stem = shot_stem(&board.chapters[c].scenes[s].id, index);
         let mut tries = 0;
         while check.checked
             && !check.is_acceptable
@@ -371,6 +375,74 @@ pub fn check_and_mend(
         Err(error) => log::warn!("the picture checks: {error}"),
     }
     (report, spent)
+}
+
+/// How many pictures are looked at at once: a long video's in a fraction
+/// of the time, and few enough that the seeing model's rate limit is not
+/// what slows it.
+pub const LOOKERS: usize = 4;
+
+/// Each of `todo` looked at, [`LOOKERS`] at a time, in `todo`'s order;
+/// `None` for those not reached when `stop` said to. `progress` hears how
+/// many are done of how many.
+#[allow(clippy::too_many_arguments)]
+fn look_all(
+    job: &crate::job::Job,
+    board: &Storyboard,
+    todo: &[(usize, usize, usize)],
+    key: &str,
+    model: &str,
+    threshold: u8,
+    progress: &mut dyn FnMut(usize, usize),
+    stop: &dyn Fn() -> bool,
+) -> Vec<Option<Check>> {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let of = todo.len();
+    let mut looked: Vec<Option<Check>> = vec![None; of];
+    if of == 0 {
+        return looked;
+    }
+    let next = AtomicUsize::new(0);
+    let stopped = AtomicBool::new(false);
+    let (tell, heard) = std::sync::mpsc::channel::<(usize, Check)>();
+    std::thread::scope(|scope| {
+        for _ in 0..LOOKERS.min(of) {
+            let tell = tell.clone();
+            let (next, stopped) = (&next, &stopped);
+            scope.spawn(move || {
+                while !stopped.load(Ordering::Relaxed) {
+                    let at = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(&(c, s, index)) = todo.get(at) else {
+                        break;
+                    };
+                    let check = look(job, board, c, s, index, key, model, threshold);
+                    if tell.send((at, check)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(tell);
+        progress(1, of);
+        let mut done = 0;
+        // The workers stop between pictures when asked; `stop` is asked
+        // here, on the thread that was given it.
+        loop {
+            match heard.recv_timeout(std::time::Duration::from_millis(500)) {
+                Ok((at, check)) => {
+                    looked[at] = Some(check);
+                    done += 1;
+                    progress((done + 1).min(of), of);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+            if stop() {
+                stopped.store(true, Ordering::Relaxed);
+            }
+        }
+    });
+    looked
 }
 
 /// One picture of shot `index` of scene `s` of chapter `c`, looked at.

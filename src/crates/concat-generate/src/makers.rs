@@ -18,8 +18,9 @@ use serde_json::{Value, json};
 
 use crate::providers::{self, agent, refused};
 
-/// The OpenAI picture model used when none is named.
-pub const OPENAI_IMAGE_MODEL: &str = "gpt-image-1";
+/// The OpenAI picture model used when none is named: GPT Image 2, which
+/// accounts run where GPT Image 1 is refused.
+pub const OPENAI_IMAGE_MODEL: &str = "gpt-image-2";
 /// The Gemini picture model used when none is named: Gemini 2.5 Flash
 /// Image. A model whose name starts with `imagen` is run as Imagen.
 pub const GEMINI_IMAGE_MODEL: &str = "gemini-2.5-flash-image";
@@ -143,6 +144,91 @@ impl Clips {
             }
         }
     }
+}
+
+/// The picture models `pictures`' account can run, by the names its
+/// maker takes, the default first: what the sheet offers in place of a
+/// name typed by hand, which a typo turns into a run that fails at its
+/// first picture ("gbt-image-2" does not exist). Replicate is not asked:
+/// its thousands of models are chosen by quality on the sheet.
+pub fn picture_models(pictures: &Pictures) -> Result<Vec<String>, String> {
+    match pictures {
+        Pictures::Replicate { .. } => Ok(Vec::new()),
+        Pictures::OpenAi { key, .. } => {
+            if key.trim().is_empty() {
+                return Err("OpenAI needs an API key".to_owned());
+            }
+            let answer: Value = agent()
+                .get("https://api.openai.com/v1/models")
+                .set("authorization", &format!("Bearer {}", key.trim()))
+                .call()
+                .map_err(|error| refused("OpenAI", error))?
+                .into_json()
+                .map_err(|error| error.to_string())?;
+            Ok(openai_picture_models(&answer))
+        }
+        Pictures::Gemini { key, .. } => {
+            if key.trim().is_empty() {
+                return Err("Gemini needs an API key".to_owned());
+            }
+            let answer: Value = agent()
+                .get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000")
+                .set("x-goog-api-key", key.trim())
+                .call()
+                .map_err(|error| refused("Gemini", error))?
+                .into_json()
+                .map_err(|error| error.to_string())?;
+            Ok(gemini_picture_models(&answer))
+        }
+    }
+}
+
+/// The picture models in OpenAI's list of models: the GPT Image ones and
+/// DALL-E, the default first, then by name.
+fn openai_picture_models(answer: &Value) -> Vec<String> {
+    let names = answer["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model["id"].as_str())
+        .filter(|id| id.starts_with("gpt-image") || id.starts_with("dall-e"))
+        .map(str::to_owned);
+    default_first(names, OPENAI_IMAGE_MODEL)
+}
+
+/// The picture models in Gemini's list of models: those that make images
+/// with `generateContent` and Imagen's, which `predict` - the two ways
+/// [`gemini_image`] asks - the default first, then by name.
+fn gemini_picture_models(answer: &Value) -> Vec<String> {
+    let names = answer["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| {
+            let name = model["name"].as_str()?.trim_start_matches("models/");
+            let methods: Vec<&str> = model["supportedGenerationMethods"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let draws = name.contains("image") && methods.contains(&"generateContent");
+            let imagen = name.starts_with("imagen") && methods.contains(&"predict");
+            (draws || imagen).then(|| name.to_owned())
+        });
+    default_first(names, GEMINI_IMAGE_MODEL)
+}
+
+/// `names` sorted and without repeats, `default` first when among them.
+fn default_first(names: impl Iterator<Item = String>, default: &str) -> Vec<String> {
+    let mut names: Vec<String> = names.collect();
+    names.sort();
+    names.dedup();
+    if let Some(at) = names.iter().position(|name| name == default) {
+        let name = names.remove(at);
+        names.insert(0, name);
+    }
+    names
 }
 
 /// Whether `aspect` ("9:16") is taller than it is wide, or square.
@@ -601,6 +687,33 @@ mod tests {
         assert_eq!(openai_size("1:1"), "1024x1024");
         assert_eq!(five_or_ten(4.0), 5);
         assert_eq!(five_or_ten(9.0), 10);
+    }
+
+    /// Only the picture models are offered, the default first: OpenAI's
+    /// GPT Image and DALL-E, Gemini's image models and Imagen - not the
+    /// text models, nor an image model that cannot be asked as the app
+    /// asks.
+    #[test]
+    fn the_picture_models_are_picked_from_the_lists() {
+        let openai = json!({"data": [
+            {"id": "gpt-4o"}, {"id": "dall-e-3"}, {"id": "gpt-image-1"},
+            {"id": "gpt-image-2"}, {"id": "whisper-1"}, {"id": "dall-e-3"}
+        ]});
+        assert_eq!(
+            openai_picture_models(&openai),
+            ["gpt-image-2", "dall-e-3", "gpt-image-1"]
+        );
+        let gemini = json!({"models": [
+            {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/imagen-4.0-generate-001", "supportedGenerationMethods": ["predict"]},
+            {"name": "models/gemini-2.5-flash-image", "supportedGenerationMethods": ["generateContent", "countTokens"]},
+            {"name": "models/gemini-embedding-image", "supportedGenerationMethods": ["embedContent"]}
+        ]});
+        assert_eq!(
+            gemini_picture_models(&gemini),
+            ["gemini-2.5-flash-image", "imagen-4.0-generate-001"]
+        );
+        assert!(openai_picture_models(&json!({"error": "no"})).is_empty());
     }
 
     /// Gemini's picture is found in its answer, under either spelling;

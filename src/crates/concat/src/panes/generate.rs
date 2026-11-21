@@ -38,7 +38,7 @@ use concat_project::commands::NewMedia;
 use concat_project::model::MediaKind;
 use slint::SharedString;
 
-use crate::host::{on_ui, on_ui_in_project, spawn_in_project};
+use crate::host::{on_ui, on_ui_in_project, spawn, spawn_in_project};
 use crate::i18n::{t, tf};
 use crate::panes::Msg;
 use crate::panes::export::ExportMsg;
@@ -135,6 +135,9 @@ pub enum GenerateMsg {
     /// when it has detail enough to compare; and whether it is the last
     /// of them.
     Thumbs(Vec<Thumb>, bool),
+    /// The picture models the account can run, or why there is no list:
+    /// asked of the maker (1 OpenAI, 2 Gemini) with that key.
+    PictureModels(usize, String, Box<Result<Vec<String>, String>>),
     /// Cut a Short from the video: a minute of it, 9:16.
     Short,
     /// The Short's storyboard and the files it is cut from, or why not.
@@ -279,6 +282,9 @@ pub struct GeneratePane {
     /// when the storyboard is written so the next run makes them again.
     stale_voices: BTreeSet<String>,
     stale_shots: BTreeSet<String>,
+    /// The picture models offered for the chosen maker; see
+    /// [`PictureModels`].
+    picture_models: PictureModels,
     /// Asked between files by the running worker.
     stop: Arc<AtomicBool>,
     /// The phone is told to keep the app going: something is being made.
@@ -335,6 +341,7 @@ impl Default for GeneratePane {
             dirty: false,
             stale_voices: BTreeSet::new(),
             stale_shots: BTreeSet::new(),
+            picture_models: PictureModels::default(),
             stop: Arc::new(AtomicBool::new(false)),
             kept_alive: false,
         }
@@ -380,6 +387,7 @@ impl GeneratePane {
                     self.topic = idea.topic;
                     self.notes = idea.notes;
                 }
+                self.ask_picture_models(studio);
                 self.look(studio);
             }
             GenerateMsg::Close => {
@@ -467,6 +475,11 @@ impl GeneratePane {
                     _ => return,
                 }
                 studio.prefs.save(&studio.host.dirs);
+                // A key typed - the picture maker's, or OpenAI's from the
+                // writer's row - is a list of models to ask for again.
+                if matches!(field, 21 | 29) {
+                    self.ask_picture_models(studio);
+                }
             }
             GenerateMsg::ChoiceChanged(field, index) => {
                 let index = index.max(0) as usize;
@@ -561,8 +574,17 @@ impl GeneratePane {
                     20 => {
                         prefs.picture_maker = index.min(2);
                         studio.prefs.save(&studio.host.dirs);
+                        self.ask_picture_models(studio);
                         self.tally(studio);
                         return;
+                    }
+                    24 => {
+                        if let Some(name) = self.picture_models.names.get(index) {
+                            match prefs.picture_maker {
+                                1 => prefs.openai_image_model = name.clone(),
+                                _ => prefs.gemini_image_model = name.clone(),
+                            }
+                        }
                     }
                     21 => {
                         prefs.clip_maker = index.min(2);
@@ -675,6 +697,9 @@ impl GeneratePane {
                     },
                     None => studio.notify(&t("generate.notAShot"), true),
                 }
+            }
+            GenerateMsg::PictureModels(maker, key, result) => {
+                self.picture_models_came(studio, maker, key, *result)
             }
             GenerateMsg::Short => self.short(studio),
             GenerateMsg::Publish => self.publish(studio),
@@ -1497,6 +1522,97 @@ impl GeneratePane {
     /// Asks the writer for another picture for one shot, on a worker; it
     /// takes the shot's words' place when it comes, to read, edit, and
     /// make again if it is better.
+    /// Asks the chosen picture maker, on a worker, which picture models
+    /// its key can run - once per maker and key, so typing a key asks for
+    /// the key as it ends up, not for every letter of it twice.
+    fn ask_picture_models(&mut self, studio: &mut Studio) {
+        let prefs = &studio.prefs.generate;
+        let maker = prefs.picture_maker.min(2);
+        let key = match maker {
+            1 => prefs.openai_key.trim().to_owned(),
+            2 => prefs.gemini_key.trim().to_owned(),
+            _ => String::new(),
+        };
+        let wanted = &mut self.picture_models;
+        if wanted.maker == maker && wanted.key == key {
+            return;
+        }
+        *wanted = PictureModels {
+            maker,
+            key: key.clone(),
+            ..PictureModels::default()
+        };
+        if maker == 0 || key.is_empty() {
+            return;
+        }
+        wanted.asking = true;
+        let pictures = match maker {
+            1 => makers::Pictures::OpenAi {
+                key: key.clone(),
+                model: String::new(),
+            },
+            _ => makers::Pictures::Gemini {
+                key: key.clone(),
+                model: String::new(),
+            },
+        };
+        spawn(
+            move || makers::picture_models(&pictures),
+            move |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::PictureModels(
+                    maker,
+                    key,
+                    Box::new(result),
+                )))
+            },
+        );
+    }
+
+    /// The picture models came. A model chosen before that the account
+    /// cannot run - a name typed wrong, a model retired - gives way to
+    /// the first it can, the default when it has it, so the run does not
+    /// fail at its first picture.
+    fn picture_models_came(
+        &mut self,
+        studio: &mut Studio,
+        maker: usize,
+        key: String,
+        result: Result<Vec<String>, String>,
+    ) {
+        let wanted = &mut self.picture_models;
+        // Asked for a maker or a key since changed: the newer asking
+        // answers.
+        if wanted.maker != maker || wanted.key != key {
+            return;
+        }
+        wanted.asking = false;
+        match result {
+            Ok(names) if !names.is_empty() => wanted.names = names,
+            Ok(_) => wanted.error = t("generate.noPictureModels"),
+            Err(error) => {
+                log::warn!("generate: the picture models: {error}");
+                wanted.error = error;
+            }
+        }
+        let Some(first) = wanted.names.first().cloned() else {
+            return;
+        };
+        let prefs = &mut studio.prefs.generate;
+        let (chosen, default) = match maker {
+            1 => (&mut prefs.openai_image_model, makers::OPENAI_IMAGE_MODEL),
+            _ => (&mut prefs.gemini_image_model, makers::GEMINI_IMAGE_MODEL),
+        };
+        let now = if chosen.trim().is_empty() {
+            default
+        } else {
+            chosen.trim()
+        };
+        if !wanted.names.iter().any(|name| name == now) {
+            *chosen = first;
+            studio.prefs.save(&studio.host.dirs);
+        }
+    }
+
     fn suggest(&mut self, studio: &mut Studio, chapter: i32, scene: i32, shot: i32) {
         let (Ok(chapter), Ok(scene), Ok(shot)) = (
             usize::try_from(chapter),
@@ -2895,6 +3011,41 @@ impl GeneratePane {
                 _ => makers::GEMINI_IMAGE_MODEL,
             }
             .into(),
+            picture_models: std::rc::Rc::new(slint::VecModel::from(
+                self.picture_models
+                    .names
+                    .iter()
+                    .map(|name| SharedString::from(name.as_str()))
+                    .collect::<Vec<_>>(),
+            ))
+            .into(),
+            picture_model_index: {
+                let chosen = match prefs.picture_maker {
+                    1 => prefs.openai_image_model.trim(),
+                    _ => prefs.gemini_image_model.trim(),
+                };
+                let chosen = match (chosen.is_empty(), prefs.picture_maker) {
+                    (false, _) => chosen,
+                    (true, 1) => makers::OPENAI_IMAGE_MODEL,
+                    (true, _) => makers::GEMINI_IMAGE_MODEL,
+                };
+                self.picture_models
+                    .names
+                    .iter()
+                    .position(|name| name == chosen)
+                    .map_or(-1, |at| at as i32)
+            },
+            picture_models_note: if self.picture_models.asking {
+                t("generate.askingPictureModels")
+            } else if self.picture_models.error.is_empty() {
+                String::new()
+            } else {
+                tf(
+                    "generate.pictureModelsFailed",
+                    &[&self.picture_models.error],
+                )
+            }
+            .into(),
             clip_key: match prefs.clip_maker {
                 1 => prefs.kling_access_key.as_str(),
                 _ => prefs.seedance_key.as_str(),
@@ -3633,6 +3784,22 @@ fn warning_text(warning: &checklist::Warning) -> String {
         }
         Warning::AiLabel => t("generate.checkAiLabel"),
     }
+}
+
+/// The picture models the chosen maker's key can run, as last asked.
+#[derive(Default)]
+struct PictureModels {
+    /// Asked of: 1 OpenAI, 2 Gemini; 0 for none asked.
+    maker: usize,
+    /// With this key.
+    key: String,
+    /// The answer is on its way.
+    asking: bool,
+    /// The models, the default first; empty until they come, or when the
+    /// maker would not list them.
+    names: Vec<String>,
+    /// Why there is no list.
+    error: String,
 }
 
 /// Seconds as minutes and seconds: "2:05".
