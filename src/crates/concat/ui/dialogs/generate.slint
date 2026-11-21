@@ -207,6 +207,16 @@ export struct GenerateSheetData {
     /// The channel's plan: how many long videos a week (a row of 1, 2, 3,
     /// 5), what it would cost, and its videos.
     plan-per-week: int,
+    /// YouTube: the person's OAuth client, the channel signed in to (empty
+    /// for none), who sees a video put up (0 private, 1 unlisted, 2
+    /// public), an upload under way and how far, and the last numbers.
+    youtube-client-id: string,
+    youtube-client-secret: string,
+    youtube-channel: string,
+    youtube-privacy: int,
+    uploading: bool,
+    upload-progress: float,
+    youtube-numbers: string,
     /// How many of the plan's videos are not made yet.
     plan-left: int,
     plan-cost: string,
@@ -350,13 +360,15 @@ export component GenerateDialog inherits Modal {
     /// 7 Replicate image model, 8 spend limit, 9 price of a clip, 10 price
     /// of a still, 11-16 the channel: name, audience, voice, opening line,
     /// closing line, a script it likes; 26 its topics, 27 its rules; 28
-    /// the research notes; 31 what a new channel's owner cares about.
+    /// the research notes; 31 what a new channel's owner cares about; 32
+    /// and 33 the YouTube OAuth client's id and secret.
     callback text-edited(field: int, text: string);
     /// Which choice: 0 minutes, 1 language, 2 aspect, 3 voice, 4 shots,
     /// 5 music, 6 clips, 7 caption look, 8 content style, 9 picture quality,
     /// 10 audience level, 11 visuals (pictures and cards, or cards only),
     /// 24 the picture model, from the list the key can run, 25 how many
-    /// long videos a week the channel's plan holds.
+    /// long videos a week the channel's plan holds, 26 who sees a video
+    /// put up on YouTube.
     callback choice-changed(field: int, index: int);
     /// Which switch: 0 captions, 1 titles, 2 export when done, 3 research
     /// on the web.
@@ -379,7 +391,9 @@ export component GenerateDialog inherits Modal {
     /// series, 4 pick the video's Shorts, 5 research first, 6 export
     /// everything, 7 check before publishing, 8 suggest niches, 9 show or
     /// hide finding a niche, 10 design the channel's look, 11 plan its
-    /// next thirty days, 12 make every video of the plan not made yet.
+    /// next thirty days, 12 make every video of the plan not made yet, 13
+    /// connect YouTube, 14 put the last export up, 15 read the numbers, 16
+    /// disconnect YouTube.
     callback act(kind: int);
     callback publish();
     callback cancel();
@@ -1302,6 +1316,114 @@ export component GenerateDialog inherits Modal {
                                 placeholder: "0.003";
                                 edited(text) => { root.text-edited(10, text); }
                             }
+                        }
+                    }
+
+                    // YouTube, through the person's own Google OAuth client:
+                    // signed in once in the browser, then videos put up and
+                    // their numbers read back.
+                    DialogSection {
+                        title: "YouTube";
+
+                        Text {
+                            text: I18n.t("generate.youtubeHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        DialogRow {
+                            label: "Client ID";
+                            Field {
+                                value: root.data.youtube-client-id;
+                                technical: true;
+                                placeholder: "….apps.googleusercontent.com";
+                                edited(text) => { root.text-edited(32, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: "Client secret";
+                            Field {
+                                value: root.data.youtube-client-secret;
+                                secret: true;
+                                technical: true;
+                                placeholder: "GOCSPX-…";
+                                edited(text) => { root.text-edited(33, text); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.youtube-channel != "" ? I18n.t("generate.youtubeIn") + " " + root.data.youtube-channel : I18n.t("generate.youtubeOut");
+                            color: root.data.youtube-channel != "" ? Theme.accent : Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+
+                            Button {
+                                label: root.data.youtube-channel != "" ? I18n.t("generate.youtubeReconnect") : I18n.t("generate.youtubeConnect");
+                                glyph: Glyph.lock;
+                                enabled: !root.data.running;
+                                clicked => { root.act(13); }
+                            }
+
+                            if root.data.youtube-channel != "": Button {
+                                label: I18n.t("generate.youtubeDisconnect");
+                                ghost: true;
+                                clicked => { root.act(16); }
+                            }
+                        }
+
+                        if root.data.youtube-channel != "": DialogRow {
+                            label: I18n.t("generate.youtubePrivacy");
+                            Select {
+                                options: [I18n.t("generate.youtubePrivate"), I18n.t("generate.youtubeUnlisted"), I18n.t("generate.youtubePublic")];
+                                current: root.data.youtube-privacy;
+                                changed(index) => { root.choice-changed(26, index); }
+                            }
+                        }
+
+                        if root.data.youtube-channel != "": HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+
+                            Button {
+                                label: I18n.t("generate.uploadLast");
+                                glyph: Glyph.film;
+                                primary: true;
+                                enabled: !root.data.uploading;
+                                clicked => { root.act(14); }
+                            }
+
+                            Button {
+                                label: I18n.t("generate.readNumbers");
+                                glyph: Glyph.search;
+                                ghost: true;
+                                enabled: !root.data.running;
+                                clicked => { root.act(15); }
+                            }
+                        }
+
+                        if root.data.uploading: Progress {
+                            value: root.data.upload-progress;
+                            live: true;
+                        }
+
+                        if root.data.youtube-channel != "": Text {
+                            text: I18n.t("generate.uploadHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.youtube-numbers != "": Text {
+                            text: root.data.youtube-numbers;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
                         }
                     }
 

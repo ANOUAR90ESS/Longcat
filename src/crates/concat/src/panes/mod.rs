@@ -125,6 +125,18 @@ pub fn activity(msg: &Msg) -> Option<Activity> {
                 },
             ));
         }
+        // A sign-in's answer holds the refresh token: only whether it
+        // worked is written.
+        Msg::Generate(generate::GenerateMsg::YouTubeConnected(result)) => {
+            return Some(Activity::once(
+                Info,
+                match result.as_ref() {
+                    Ok(_) => "generate: YouTube connected".to_owned(),
+                    Err(error) => format!("generate: YouTube not connected, {error}"),
+                },
+            ));
+        }
+        Msg::Generate(generate::GenerateMsg::UploadProgress(_)) => return None,
         Msg::Generate(generate::GenerateMsg::Made(result)) => {
             return Some(Activity::once(
                 Info,

@@ -350,6 +350,22 @@ public class ConcatFiles extends Fragment {
         }
     }
 
+    /**
+     * Opens a web page in the phone's browser: Google's sign-in, for
+     * YouTube. False when nothing on the phone opens it.
+     */
+    public static boolean openLink(Activity activity, String url) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            activity.startActivity(intent);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not open the link", e);
+            return false;
+        }
+    }
+
     /** The last video put in the media store, to play or share. */
     private static Uri lastPublished;
 

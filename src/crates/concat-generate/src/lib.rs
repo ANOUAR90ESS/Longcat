@@ -50,3 +50,4 @@ pub mod srt;
 pub mod storyboard;
 pub mod visual;
 pub mod writer;
+pub mod youtube;

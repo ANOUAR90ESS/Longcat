@@ -716,6 +716,16 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## Two fixes from the owner's log (21 Nov)
+
+- The picture check's redrawing said nothing: a still that failed was
+  drawn again for a minute under "Checking picture 17 of 17", and looked
+  stuck. It now says "Drawing again picture n of m" (`Step::Redrawing`).
+- Every message is written to the log, and the picture models' answer
+  carried the OpenAI key itself: the owner's log showed it. The message
+  carries a fingerprint of the key now, and a YouTube sign-in's answer is
+  logged as connected or not, never with its token.
+
 ## Channel manager (owner, 21 Nov)
 
 A channel built from nothing: a niche, its identity, a plan of videos,
@@ -756,10 +766,20 @@ cost is shown before, and the person decides.
    looked over as it is cut and held back from export when something is
    wrong; each is marked made in the plan as its script is written;
    Cancel stops the one under way and Create carries it on.
-5. **Publishing**: YouTube's upload through the person's own Google
-   Cloud OAuth client (Client ID and secret in the sheet, a sign-in in the
-   browser; an unaudited project uploads as private), scheduled, and the
-   numbers read back to steer the next videos.
+5. **Publishing** - done. A YouTube section in the sheet
+   (`concat_generate::youtube`): the person's own OAuth client ("Desktop
+   app") by its id and secret; "Connect YouTube" opens Google's page in
+   the browser (`platform::open_web`; on Android `ConcatFiles.openLink`)
+   and waits on a loopback port of the device for the code, traded with
+   a PKCE verifier for a refresh token kept on the device like every key
+   and never in a series. "Upload the last export" puts it up through the
+   resumable upload - as a Short when its file is one of the video's
+   Shorts, else as the long video with its title, description and tags -
+   private, unlisted or public (an unaudited project's are private
+   whatever is asked); "Read the numbers" lists views, likes and comments
+   of what was put up from here (kept per channel).
+   - Later: scheduling by the plan's days, the thumbnail set through the
+     API (a verified channel's), and the numbers steering the next plan.
 
 ## Results: the video and its four Shorts, each a project (owner, 21 Nov)
 

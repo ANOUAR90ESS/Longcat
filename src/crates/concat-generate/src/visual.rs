@@ -298,7 +298,8 @@ pub fn read_report(job: &crate::job::Job) -> Option<Report> {
 /// The pictures are looked at [`LOOKERS`] at a time: one by one, a long
 /// video's forty pictures were minutes of waiting on one answer after
 /// another (the owner, 21 Nov). Only the ones that fail are drawn again,
-/// one at a time, after.
+/// one at a time, after. `progress` hears which picture is looked at, of
+/// how many, and then - its first argument true - which is drawn again.
 #[allow(clippy::too_many_arguments)]
 pub fn check_and_mend(
     job: &crate::job::Job,
@@ -309,7 +310,7 @@ pub fn check_and_mend(
     model: &str,
     threshold: u8,
     attempts: u8,
-    progress: &mut dyn FnMut(usize, usize),
+    progress: &mut dyn FnMut(bool, usize, usize),
     stop: &dyn Fn() -> bool,
 ) -> (Report, f64) {
     let mut report = Report {
@@ -324,7 +325,29 @@ pub fn check_and_mend(
             Some((c, s, *index))
         })
         .collect();
-    let looked = look_all(job, board, &todo, key, model, threshold, progress, stop);
+    let looked = look_all(
+        job,
+        board,
+        &todo,
+        key,
+        model,
+        threshold,
+        &mut |n, of| progress(false, n, of),
+        stop,
+    );
+    // How many will be drawn again, to say which of them is.
+    let failing = todo
+        .iter()
+        .zip(&looked)
+        .filter(|((c, s, index), check)| {
+            check
+                .as_ref()
+                .is_some_and(|check| check.checked && !check.is_acceptable)
+                && attempts > 0
+                && board.chapters[*c].scenes[*s].shots[*index].kind == ShotKind::Image
+        })
+        .count();
+    let mut redrawn = 0;
     for ((c, s, index), check) in todo.into_iter().zip(looked) {
         let Some(mut check) = check else {
             // Stopped before it was looked at.
@@ -338,6 +361,10 @@ pub fn check_and_mend(
             && board.chapters[c].scenes[s].shots[index].kind == ShotKind::Image
             && !stop()
         {
+            if tries == 0 {
+                redrawn += 1;
+            }
+            progress(true, redrawn.min(failing.max(1)), failing.max(1));
             tries += 1;
             let shot = &mut board.chapters[c].scenes[s].shots[index];
             shot.prompt = check.amend(&shot.prompt);
