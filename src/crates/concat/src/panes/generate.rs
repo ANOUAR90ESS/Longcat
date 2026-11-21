@@ -848,6 +848,7 @@ impl GeneratePane {
                 8 => self.find_niches(studio),
                 10 => self.design_look(studio),
                 11 => self.plan_month(studio),
+                12 => self.make_plan(studio),
                 9 => self.niche_open = !self.niche_open,
                 7 => {
                     let found = self.check_before_publishing(studio);
@@ -2823,6 +2824,35 @@ impl GeneratePane {
         );
     }
 
+    /// Makes every video of the channel's plan not made yet, one after
+    /// another in its order, as Make every idea makes a batch: each looked
+    /// over as it is cut, held back from export when something is wrong,
+    /// and marked made in the plan as its script is written. Cancel stops
+    /// the one under way; Create carries it on where it stopped.
+    fn make_plan(&mut self, studio: &mut Studio) {
+        let left: Vec<String> = self
+            .calendar
+            .iter()
+            .flat_map(|calendar| &calendar.entries)
+            .filter(|entry| !entry.made)
+            .map(|entry| entry.title.clone())
+            .collect();
+        if left.is_empty() {
+            studio.notify(&t("generate.planAllMade"), false);
+            return;
+        }
+        let one = self.estimate(studio).total();
+        studio.notify(
+            &tf(
+                "generate.planMaking",
+                &[&left.len(), &dollars(one * left.len() as f64)],
+            ),
+            false,
+        );
+        self.queue = left;
+        self.next(studio);
+    }
+
     /// What the plan of the week's number would cost, at the sheet's
     /// choices as they are now: the videos, one's cost, and all of them.
     fn plan_cost(&self, studio: &Studio) -> String {
@@ -3654,6 +3684,12 @@ impl GeneratePane {
                 .join(" · ")
                 .into(),
             plan_per_week: per_week_row(prefs) as i32,
+            plan_left: self
+                .calendar
+                .iter()
+                .flat_map(|calendar| &calendar.entries)
+                .filter(|entry| !entry.made)
+                .count() as i32,
             plan_cost: self.plan_cost(studio).into(),
             plan: std::rc::Rc::new(slint::VecModel::from(
                 self.calendar

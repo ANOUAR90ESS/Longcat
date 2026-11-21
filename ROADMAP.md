@@ -750,8 +750,12 @@ cost is shown before, and the person decides.
    its four Shorts from the results, so the plan is of long videos only.
    Kept in the channel's folder; "Make this" makes a video the idea, and
    a video of the plan written is marked made.
-4. **Making it**: the plan's videos made one after another, each to look
-   over before it goes up.
+4. **Making it** - done. "Make the whole plan" queues every video of the
+   plan not made yet and makes them one after another, as Make every
+   idea makes a batch, saying first how many and what they cost. Each is
+   looked over as it is cut and held back from export when something is
+   wrong; each is marked made in the plan as its script is written;
+   Cancel stops the one under way and Create carries it on.
 5. **Publishing**: YouTube's upload through the person's own Google
    Cloud OAuth client (Client ID and secret in the sheet, a sign-in in the
    browser; an unaudited project uploads as private), scheduled, and the

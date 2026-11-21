@@ -207,6 +207,8 @@ export struct GenerateSheetData {
     /// The channel's plan: how many long videos a week (a row of 1, 2, 3,
     /// 5), what it would cost, and its videos.
     plan-per-week: int,
+    /// How many of the plan's videos are not made yet.
+    plan-left: int,
     plan-cost: string,
     plan: [PlanRow],
     look-words: string,
@@ -377,7 +379,7 @@ export component GenerateDialog inherits Modal {
     /// series, 4 pick the video's Shorts, 5 research first, 6 export
     /// everything, 7 check before publishing, 8 suggest niches, 9 show or
     /// hide finding a niche, 10 design the channel's look, 11 plan its
-    /// next thirty days.
+    /// next thirty days, 12 make every video of the plan not made yet.
     callback act(kind: int);
     callback publish();
     callback cancel();
@@ -1386,6 +1388,28 @@ export component GenerateDialog inherits Modal {
                                 glyph: Glyph.sparkle;
                                 clicked => { root.act(11); }
                             }
+                        }
+
+                        // Every video of the plan not made yet, one after
+                        // another: each looked over, held back from export
+                        // when something is wrong. Cancel stops it.
+                        if root.data.plan-left > 0: HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.makePlan");
+                                glyph: Glyph.film;
+                                primary: true;
+                                enabled: !root.data.running;
+                                clicked => { root.act(12); }
+                            }
+                        }
+
+                        if root.data.plan-left > 0: Text {
+                            text: I18n.t("generate.makePlanHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
                         }
 
                         for entry[index] in root.data.plan: HorizontalLayout {
