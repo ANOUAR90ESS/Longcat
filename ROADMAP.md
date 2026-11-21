@@ -716,6 +716,16 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## A new home: ANOUAR90ESS/Longcat (owner, 21 Nov)
+
+GitHub Actions stayed disabled on ANOUAR90ESS/Concat ("Actions has been
+disabled for this repository", though its settings allow every action),
+so the project moved to ANOUAR90ESS/Longcat, from Concat's main at 214a7fa
+as one commit (Concat's clone here was shallow; its history stays there).
+The app's update check and the release notes now point at Longcat's
+releases; Concat's, up to alpha.44, stay where they are, and an install
+from them finds Longcat's only once updated by hand.
+
 ## Fewer Actions minutes (owner, 21 Nov)
 
 GitHub stopped starting any workflow on the repository after 23:29 on 20
