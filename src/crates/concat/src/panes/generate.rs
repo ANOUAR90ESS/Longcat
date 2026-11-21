@@ -169,7 +169,7 @@ pub enum GenerateMsg {
     Translated(Box<Result<(String, Storyboard, usize), String>>),
     /// The channel's look designed, its logo and banner drawn when a
     /// picture maker is chosen (else why not), or why there is none.
-    Looked(Box<Result<(identity::Identity, Result<(PathBuf, PathBuf), String>), String>>),
+    Looked(Box<Result<Look, String>>),
     /// Use niche `n` of those proposed: a channel of its own, picked.
     ChooseNiche(i32),
     /// The niches proposed, or why there are none.
@@ -4100,6 +4100,10 @@ fn brand_of(prefs: &crate::prefs::GeneratePrefs) -> Option<concat_generate::job:
         }
     })
 }
+
+/// A channel's look as designed, and its logo and banner as drawn - or
+/// why they were not.
+pub type Look = (identity::Identity, Result<(PathBuf, PathBuf), String>);
 
 /// What goes up with the video, written and kept, and the thumbnail's
 /// picture probed - or why there is none.
