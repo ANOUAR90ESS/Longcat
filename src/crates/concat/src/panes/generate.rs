@@ -24,6 +24,7 @@ use concat_generate::checklist;
 use concat_generate::cost::{self, Estimate, Prices};
 use concat_generate::job::{Costs, Idea, Job, Made, Remade, Status, Step};
 use concat_generate::makers;
+use concat_generate::niche;
 use concat_generate::plan::{self, CaptionLook, Editing, Options};
 use concat_generate::providers::{self, DEFAULT_VIDEO_MODEL, Shots, Voice};
 use concat_generate::review;
@@ -44,7 +45,7 @@ use crate::panes::Msg;
 use crate::panes::export::ExportMsg;
 use crate::panes::settings::installed;
 use crate::studio::Studio;
-use crate::ui::{GenerateSheetData, ScriptRow, ScriptSheetData, ShortResult};
+use crate::ui::{GenerateSheetData, NicheRow, ScriptRow, ScriptSheetData, ShortResult};
 
 /// The lengths offered, in minutes, row for row with the sheet's list.
 const MINUTES: [f64; 8] = [1.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 60.0];
@@ -165,6 +166,10 @@ pub enum GenerateMsg {
     /// The video translated: its new idea, its storyboard and its
     /// language's row, or why not.
     Translated(Box<Result<(String, Storyboard, usize), String>>),
+    /// Use niche `n` of those proposed: a channel of its own, picked.
+    ChooseNiche(i32),
+    /// The niches proposed, or why there are none.
+    Niches(Box<Result<Vec<niche::Niche>, String>>),
     /// The Shorts picked for the results, or why not.
     ShortsPlanned(Box<Result<shorts::Plan, String>>),
     /// The writer is done; and whether making follows.
@@ -213,6 +218,11 @@ pub struct GeneratePane {
     source: String,
     /// The writer's ideas for the next videos.
     ideas: Vec<VideoIdea>,
+    /// Finding a niche for a new channel: shown, what the person cares
+    /// about, and the niches proposed, the most worth first.
+    niche_open: bool,
+    niche_interests: String,
+    niches: Vec<niche::Niche>,
     /// The ideas still to make, in a batch; the one being made is not
     /// among them.
     queue: Vec<String>,
@@ -320,6 +330,9 @@ impl Default for GeneratePane {
             mended: false,
             source: String::new(),
             ideas: Vec::new(),
+            niche_open: false,
+            niche_interests: String::new(),
+            niches: Vec::new(),
             queue: Vec::new(),
             ended: None,
             also_language: 1,
@@ -483,6 +496,10 @@ impl GeneratePane {
                     }
                     19 => {
                         self.source = text;
+                        return;
+                    }
+                    31 => {
+                        self.niche_interests = text;
                         return;
                     }
                     _ => return,
@@ -809,6 +826,8 @@ impl GeneratePane {
                 4 => self.plan_shorts(studio),
                 5 => self.research_first(studio),
                 6 => self.export_all(studio),
+                8 => self.find_niches(studio),
+                9 => self.niche_open = !self.niche_open,
                 7 => {
                     let found = self.check_before_publishing(studio);
                     match found.is_empty() {
@@ -819,6 +838,14 @@ impl GeneratePane {
                 _ => {}
             },
             GenerateMsg::ExportNext => self.export_next(studio),
+            GenerateMsg::Niches(result) => {
+                self.running = false;
+                match *result {
+                    Ok(niches) => self.niches = niches,
+                    Err(error) => self.failed(error),
+                }
+            }
+            GenerateMsg::ChooseNiche(index) => self.choose_niche(studio, index.max(0) as usize),
             GenerateMsg::Researched(result) => {
                 self.running = false;
                 match *result {
@@ -2600,6 +2627,98 @@ impl GeneratePane {
         );
     }
 
+    /// Asks the writer, on a worker, for niches for a new channel: for
+    /// what the person cares about, in the narration's language.
+    fn find_niches(&mut self, studio: &mut Studio) {
+        let (key, model) = studio.prefs.generate.writer();
+        if key.trim().is_empty() {
+            self.message = need_writer_key(&studio.prefs.generate);
+            return;
+        }
+        let interests = self.niche_interests.trim().to_owned();
+        let language = LANGUAGES[studio.prefs.generate.language.min(LANGUAGES.len() - 1)];
+        self.begin(t("generate.nichesBusy"));
+        self.phase = 0;
+        spawn_in_project(
+            move || niche::find(&interests, language, &key, &model),
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::Niches(Box::new(result))))
+            },
+        );
+    }
+
+    /// Makes niche `index` a channel of its own: the choices as they are,
+    /// under the niche's name, with its audience, voice, subjects and
+    /// rules - saved among the channels and picked, its first videos the
+    /// ideas to make. A channel of that name already saved is replaced.
+    fn choose_niche(&mut self, studio: &mut Studio, index: usize) {
+        let Some(chosen) = self.niches.get(index).cloned() else {
+            return;
+        };
+        let prefs = &mut studio.prefs.generate;
+        let mut channel = prefs.as_template(&chosen.name);
+        let new = &mut channel.prefs;
+        new.channel_name = chosen.name.clone();
+        new.channel_audience = chosen.audience.clone();
+        new.channel_voice = chosen.voice.clone();
+        new.channel_topics = chosen.topics.clone();
+        new.channel_rules = chosen.rules.clone();
+        // The old channel's own lines are not this one's.
+        new.channel_opening.clear();
+        new.channel_closing.clear();
+        new.channel_example.clear();
+        prefs.keep_template(channel);
+        if let Some(row) = prefs
+            .templates
+            .iter()
+            .position(|kept| kept.name == chosen.name)
+        {
+            prefs.apply_template(row);
+        }
+        studio.prefs.save(&studio.host.dirs);
+        self.ideas = chosen
+            .first_videos
+            .iter()
+            .map(|title| VideoIdea {
+                title: title.clone(),
+                angle: String::new(),
+            })
+            .collect();
+        self.niches.clear();
+        self.niche_open = false;
+        studio.notify(&tf("generate.nicheChosen", &[&chosen.name]), false);
+        self.tally(studio);
+    }
+
+    /// The niches proposed, as the sheet lists them.
+    fn niche_rows(&self) -> Vec<NicheRow> {
+        self.niches
+            .iter()
+            .map(|found| NicheRow {
+                name: found.name.as_str().into(),
+                summary: found.summary.as_str().into(),
+                why: found.why.as_str().into(),
+                scores: tf(
+                    "generate.nicheScores",
+                    &[
+                        &found.demand,
+                        &found.competition,
+                        &found.revenue,
+                        &found.faceless,
+                    ],
+                )
+                .into(),
+                videos: found
+                    .first_videos
+                    .iter()
+                    .map(|title| format!("• {title}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .into(),
+            })
+            .collect()
+    }
+
     /// The ideas list's rows: what to do, then each idea and why.
     pub fn idea_rows(&self) -> Vec<SharedString> {
         std::iter::once(t("generate.ideasPick"))
@@ -3318,6 +3437,9 @@ impl GeneratePane {
             status: self.status.as_str().into(),
             can_short: self.all_made && !self.running && away.is_none(),
             results: self.all_made && away.is_none(),
+            niche_open: self.niche_open,
+            niche_interests: self.niche_interests.as_str().into(),
+            niches: std::rc::Rc::new(slint::VecModel::from(self.niche_rows())).into(),
             shorts: std::rc::Rc::new(slint::VecModel::from(
                 self.plan
                     .iter()

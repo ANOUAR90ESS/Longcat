@@ -1790,6 +1790,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.on_generate_open_video(on_window!(|state| {
         state.handle(Msg::Generate(GenerateMsg::OpenVideo));
     }));
+    app.on_generate_choose_niche(on_window!(|state, index: i32| {
+        state.handle(Msg::Generate(GenerateMsg::ChooseNiche(index)));
+    }));
     app.on_generate_act(on_window!(|state, kind: i32| {
         state.handle(Msg::Generate(GenerateMsg::Act(kind)));
     }));

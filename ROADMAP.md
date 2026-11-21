@@ -716,6 +716,33 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## Channel manager (owner, 21 Nov)
+
+A channel built from nothing: a niche, its identity, a plan of videos,
+the videos made, then published and followed. The owner's rule for it:
+no release until every stage is done - the stages go into one pull
+request, checked by CI each time, merged and released once. No spending
+limit stops a run halfway (a limit reached mid-video lost the work); the
+cost is shown before, and the person decides.
+
+1. **The niche** - done. "Find a niche for a new channel" in the Long
+   video sheet: what the person cares about, in the narration's language;
+   six niches from the writer (`concat_generate::niche`), each with its
+   demand, crowd, pay and how well it suits faceless video out of ten -
+   the writer's judgment, said to be - the channel it would be, and its
+   first five videos. "Use this niche" saves it as a channel of its own,
+   picked, its first videos the ideas list.
+2. **The identity**: the channel's look - colours, logo, banner,
+   thumbnail style - drawn for it.
+3. **A plan of 30 days**: long videos and Shorts in order, each with its
+   angle, none made before; the cost of the whole plan shown first.
+4. **Making it**: the plan's videos made one after another, each to look
+   over before it goes up.
+5. **Publishing**: YouTube's upload through the person's own Google
+   Cloud OAuth client (Client ID and secret in the sheet, a sign-in in the
+   browser; an unaudited project uploads as private), scheduled, and the
+   numbers read back to steer the next videos.
+
 ## Results: the video and its four Shorts, each a project (owner, 21 Nov)
 
 Done. Making a Short, or the title and description, took the long video

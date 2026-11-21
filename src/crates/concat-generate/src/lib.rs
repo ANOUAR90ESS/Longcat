@@ -38,6 +38,7 @@ pub mod explainer;
 pub mod job;
 pub mod makers;
 pub mod motion;
+pub mod niche;
 pub mod plan;
 pub mod providers;
 pub mod review;
