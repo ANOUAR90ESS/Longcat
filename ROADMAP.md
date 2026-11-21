@@ -716,6 +716,30 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## Results: the video and its four Shorts, each a project (owner, 21 Nov)
+
+Done. Making a Short, or the title and description, took the long video
+off the screen: the Short was cut on a timeline of the video's project
+and the thumbnail on another, each opened over it, and the video came
+back only through Edit again. Now:
+
+- The Long video sheet shows **Results** once the video is made: the
+  video, with Open, and its four Shorts (`shorts::PLANNED`), picked once
+  by the writer and kept with the video (`shorts.json`, `shorts::Plan`).
+- Each Short has its own Create: it is cut from what was made - nothing
+  paid for again - into a **project of its own** beside the video's
+  (`project_apart`), on the recents list; the window stays on the video.
+  Made, its row says so and opens it.
+- The thumbnail is still laid on a timeline of its own, but the window
+  goes back to the one that was open and the sheet stays up.
+- Export everything writes the video and its translations, then opens
+  each Short made, in turn, and writes it too, all into the video's
+  folder, and ends back on the video's project (`switch_project`: the open
+  project saved and closed first, as the start screen does).
+- Opening a Short from the results saves and closes the video's project
+  first: opening a project over an open one had neither saved it nor let
+  it go.
+
 ## The picture check, four at a time (owner, 21 Nov)
 
 Done. "Checking picture 3 of 9 against its narration" took longer than

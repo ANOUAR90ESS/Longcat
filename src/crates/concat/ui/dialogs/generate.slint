@@ -21,6 +21,13 @@ import { ProgressRing } from "export.slint";
 // the script included, then lays the cut on a new timeline. While it runs
 // the sheet is its progress report, as the speech sheets are.
 
+/// One Short of the video's results.
+export struct ShortResult {
+    title: string,
+    /// 0 not made, 1 being made, 2 made into its own project.
+    state: int,
+}
+
 export struct GenerateSheetData {
     open: bool,
     /// The idea, in the person's words.
@@ -167,6 +174,12 @@ export struct GenerateSheetData {
     status: string,
     /// Every shot is made: a Short can be cut from the video.
     can-short: bool,
+    /// The video is made: its results are shown, while a Short of it is
+    /// made too.
+    results: bool,
+    /// The video's Shorts, each made into a project of its own when
+    /// asked; empty until they are picked, and while there are no results.
+    shorts: [ShortResult],
     running: bool,
     /// 0..1
     progress: float,
@@ -313,11 +326,15 @@ export component GenerateDialog inherits Modal {
     callback create();
     callback open-folder();
     callback edit-script();
-    /// Cut a Short: a minute of the video, 9:16.
-    callback make-short();
+    /// Make Short `index` of the results into a project of its own, or
+    /// open the one it was made into; back on the long video.
+    callback make-short(index: int);
+    callback open-short(index: int);
+    callback open-video();
     /// One of the sheet's buttons: 0 suggest ideas, 1 make every idea,
     /// 2 make the video in another language, 3 save the choices as a
-    /// series, 4 cut several Shorts, 5 research first, 6 export everything.
+    /// series, 4 pick the video's Shorts, 5 research first, 6 export
+    /// everything.
     callback act(kind: int);
     callback publish();
     callback cancel();
@@ -714,27 +731,86 @@ export component GenerateDialog inherits Modal {
                             wrap: word-wrap;
                         }
 
-                        // A minute of the finished video, cut again for a
-                        // phone held upright: nothing is made or paid for
-                        // again. The button on a line of its own and the
-                        // words under it: side by side on a phone, the
-                        // wrapped words took the row and left the button
-                        // no width at all.
-                        if root.data.can-short: HorizontalLayout {
-                            alignment: start;
+                        // The results: the long video, and its Shorts -
+                        // each a minute of it cut again for a phone held
+                        // upright, nothing made or paid for again, made
+                        // into a project of its own when asked. The video
+                        // stays as it is on its timeline: a Short never
+                        // takes its place.
+                        if root.data.results: Text {
+                            text: I18n.t("generate.results");
+                            font-size: Theme.fs-lg;
+                            font-weight: Theme.weight-title;
+                        }
+
+                        if root.data.results: HorizontalLayout {
                             spacing: 8px;
 
-                            Button {
-                                label: I18n.t("generate.makeShort");
-                                glyph: Glyph.film;
-                                clicked => { root.make-short(); }
+                            Text {
+                                text: "🎬 " + I18n.t("generate.theVideo");
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                wrap: word-wrap;
                             }
 
                             Button {
-                                label: I18n.t("generate.makeShorts");
+                                label: I18n.t("generate.open");
+                                ghost: true;
+                                clicked => { root.open-video(); }
+                            }
+                        }
+
+                        for short[index] in root.data.shorts: HorizontalLayout {
+                            spacing: 8px;
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+
+                                Text {
+                                    text: "📱 " + short.title;
+                                    wrap: word-wrap;
+                                }
+
+                                Text {
+                                    text: short.state == 2 ? I18n.t("generate.shortReady")
+                                        : short.state == 1 ? I18n.t("generate.shortMaking")
+                                        : I18n.t("generate.shortNotMade");
+                                    color: short.state == 2 ? Theme.accent : Theme.fg-dim;
+                                    font-size: Theme.fs-sm;
+                                }
+                            }
+
+                            if short.state == 0: Button {
+                                label: I18n.t("generate.create");
+                                glyph: Glyph.film;
+                                enabled: !root.data.running;
+                                clicked => { root.make-short(index); }
+                            }
+
+                            if short.state == 2: Button {
+                                label: I18n.t("generate.open");
+                                ghost: true;
+                                clicked => { root.open-short(index); }
+                            }
+                        }
+
+                        // Picked once, then kept with the video.
+                        if root.data.can-short && root.data.shorts.length == 0: HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.pickShorts");
                                 glyph: Glyph.film;
                                 clicked => { root.act(4); }
                             }
+                        }
+
+                        if root.data.results: Text {
+                            text: I18n.t("generate.resultsHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
                         }
 
                         // Export everything: the long video and every
@@ -798,13 +874,6 @@ export component GenerateDialog inherits Modal {
                                 glyph: Glyph.text-mark;
                                 clicked => { root.act(2); }
                             }
-                        }
-
-                        if root.data.can-short: Text {
-                            text: I18n.t("generate.makeShortHint");
-                            color: Theme.fg-dim;
-                            font-size: Theme.fs-sm;
-                            wrap: word-wrap;
                         }
                     }
 

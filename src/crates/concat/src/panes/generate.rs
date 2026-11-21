@@ -44,7 +44,7 @@ use crate::panes::Msg;
 use crate::panes::export::ExportMsg;
 use crate::panes::settings::installed;
 use crate::studio::Studio;
-use crate::ui::{GenerateSheetData, ScriptRow, ScriptSheetData};
+use crate::ui::{GenerateSheetData, ScriptRow, ScriptSheetData, ShortResult};
 
 /// The lengths offered, in minutes, row for row with the sheet's list.
 const MINUTES: [f64; 8] = [1.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 60.0];
@@ -138,13 +138,17 @@ pub enum GenerateMsg {
     /// The picture models the account can run, or why there is no list:
     /// asked of the maker (1 OpenAI, 2 Gemini) with that key.
     PictureModels(usize, String, Box<Result<Vec<String>, String>>),
-    /// Cut a Short from the video: a minute of it, 9:16.
-    Short,
-    /// The Short's storyboard and the files it is cut from, or why not.
-    ShortReady(Box<Result<(Storyboard, Made), String>>),
+    /// Make Short `n` of the results into a project of its own.
+    MakeShort(i32),
+    /// Short `n`'s storyboard and the files it is cut from, or why not.
+    ShortMade(usize, Box<Result<(Storyboard, Made), String>>),
+    /// Open the project Short `n` was made into.
+    OpenShort(i32),
+    /// Back on the long video, the sheet closed.
+    OpenVideo,
     /// One of the sheet's buttons: 0 suggest ideas, 1 make every idea,
     /// 2 make the video again in another language, 3 save the choices as
-    /// a series, 4 cut several Shorts, 5 research first, to read and
+    /// a series, 4 pick the video's Shorts, 5 research first, to read and
     /// correct the notes before the script is written from them, 6 export
     /// every video of the project - the long one and its Shorts - into the
     /// video's folder, one after another.
@@ -161,8 +165,8 @@ pub enum GenerateMsg {
     /// The video translated: its new idea, its storyboard and its
     /// language's row, or why not.
     Translated(Box<Result<(String, Storyboard, usize), String>>),
-    /// Several Shorts' storyboards and files, or why not.
-    ShortsReady(Box<Result<Vec<(Storyboard, Made)>, String>>),
+    /// The Shorts picked for the results, or why not.
+    ShortsPlanned(Box<Result<shorts::Plan, String>>),
     /// The writer is done; and whether making follows.
     Written(Box<Result<Storyboard, String>>, bool),
     /// The providers are done, and the files probed.
@@ -217,8 +221,10 @@ pub struct GeneratePane {
     ended: Option<std::time::Instant>,
     /// Row of the language the video is made again in.
     also_language: usize,
-    /// Cuts are not exported one after another: several Shorts at once.
-    hold_export: bool,
+    /// The video's Shorts, each a project of its own once made.
+    plan: Option<shorts::Plan>,
+    /// The Short being made, of [`Self::plan`].
+    making_short: Option<usize>,
     /// What the step under way is making, in the script's words.
     detail: String,
     /// The last shot made, to show while the next is.
@@ -260,10 +266,14 @@ pub struct GeneratePane {
     /// The research done for the idea, as kept with the video: read and
     /// corrected in the sheet, and the script written from it.
     research: Option<Research>,
-    /// Export everything: the timelines still to write, each its id and
-    /// name, and the one that was open before, to go back to at the end.
-    exports: Vec<(String, String)>,
+    /// Export everything: what is still to write, the timeline that was
+    /// open before, the video's project, to go back to at the end, and the
+    /// folder every file is written into - the video's, whichever project
+    /// is open while a Short of it is written.
+    exports: Vec<Exporting>,
     export_back: Option<String>,
+    export_home: Option<String>,
+    export_dir: Option<PathBuf>,
     /// Export everything has started a file of its own.
     export_started: bool,
     /// What the last check before publishing found, in the interface's
@@ -313,7 +323,8 @@ impl Default for GeneratePane {
             queue: Vec::new(),
             ended: None,
             also_language: 1,
-            hold_export: false,
+            plan: None,
+            making_short: None,
             detail: String::new(),
             preview: None,
             counts: String::new(),
@@ -327,6 +338,8 @@ impl Default for GeneratePane {
             research: None,
             exports: Vec::new(),
             export_back: None,
+            export_home: None,
+            export_dir: None,
             export_started: false,
             checked: None,
             publishing_busy: false,
@@ -701,7 +714,7 @@ impl GeneratePane {
             GenerateMsg::PictureModels(maker, key, result) => {
                 self.picture_models_came(studio, maker, key, *result)
             }
-            GenerateMsg::Short => self.short(studio),
+            GenerateMsg::MakeShort(index) => self.make_short(studio, index.max(0) as usize),
             GenerateMsg::Publish => self.publish(studio),
             GenerateMsg::Tick => {}
             GenerateMsg::Pill => {
@@ -741,6 +754,12 @@ impl GeneratePane {
                                     publishing.title.trim(),
                                     t("generate.thumbnail")
                                 );
+                                // The thumbnail on a timeline of its own,
+                                // and the window back on the one that was
+                                // open, the sheet left up with the title
+                                // and description: making them took the
+                                // video off the screen (the owner, 21 Nov).
+                                let open = studio.project().active_timeline_id.clone();
                                 let mut editing = Session(studio);
                                 match plan::thumbnail(
                                     &mut editing,
@@ -749,7 +768,9 @@ impl GeneratePane {
                                     &publishing.thumbnail_text,
                                 ) {
                                     Ok(_) => {
-                                        self.open = false;
+                                        studio.apply(concat_project::Command::SelectTimeline {
+                                            timeline_id: open,
+                                        });
                                         studio.notify(&t("generate.thumbnailReady"), false);
                                     }
                                     Err(error) => self.message = error,
@@ -785,7 +806,7 @@ impl GeneratePane {
                     studio.prefs.save(&studio.host.dirs);
                     studio.notify(&tf("generate.seriesSaved", &[&name]), false);
                 }
-                4 => self.shorts(studio),
+                4 => self.plan_shorts(studio),
                 5 => self.research_first(studio),
                 6 => self.export_all(studio),
                 7 => {
@@ -831,38 +852,63 @@ impl GeneratePane {
                     Err(error) => self.failed(error),
                 }
             }
-            GenerateMsg::ShortsReady(result) => {
+            GenerateMsg::ShortsPlanned(result) => {
                 self.running = false;
                 match *result {
-                    Ok(mut shorts) => {
-                        // Each its own name: the Shorts made up where the
-                        // writer picked too few all come titled alike, and
-                        // a name is a timeline's tab and a captions file's.
-                        let mut taken = HashSet::new();
-                        for (board, _) in &mut shorts {
-                            board.title = unique_name(&board.title, &mut taken);
+                    Ok(plan) => {
+                        if let Some(job) = self.job(studio)
+                            && let Err(error) = plan.keep(&job.dir)
+                        {
+                            log::warn!("generate: the Shorts' plan: {error}");
                         }
-                        // Each on a timeline of its own; exported by hand,
-                        // one at a time.
-                        self.hold_export = true;
-                        for (board, made) in &shorts {
-                            self.cut(studio, board, made, true);
-                        }
-                        self.hold_export = false;
-                        self.keep_shorts_text(studio, shorts.iter().map(|(board, _)| board));
+                        self.plan = Some(plan);
                     }
                     Err(error) => self.failed(error),
                 }
             }
-            GenerateMsg::ShortReady(result) => {
+            GenerateMsg::ShortMade(index, result) => {
                 self.running = false;
+                self.making_short = None;
                 match *result {
-                    Ok((board, made)) => {
-                        self.cut(studio, &board, &made, true);
-                        self.keep_shorts_text(studio, std::iter::once(&board));
-                    }
+                    Ok((board, made)) => self.short_project(studio, index, &board, &made),
                     Err(error) => self.failed(error),
                 }
+            }
+            GenerateMsg::OpenShort(index) => {
+                let project = self
+                    .plan
+                    .as_ref()
+                    .and_then(|plan| plan.shorts.get(index.max(0) as usize))
+                    .map(|short| short.project.clone())
+                    .filter(|project| !project.is_empty());
+                if let Some(project) = project {
+                    self.keep(studio);
+                    match switch_project(studio, &project) {
+                        // The sheet is the video's, and the video's project
+                        // is closed: it starts again, as on any close.
+                        Ok(()) => self.closed(),
+                        Err(error) => studio.notify(&error, true),
+                    }
+                }
+            }
+            GenerateMsg::OpenVideo => {
+                // The long video's timeline is the one named after it.
+                let title = self
+                    .board
+                    .as_ref()
+                    .map(|board| board.title.trim().to_owned());
+                let id = studio
+                    .project()
+                    .timelines
+                    .iter()
+                    .rev()
+                    .find(|timeline| Some(timeline.name.trim().to_owned()) == title)
+                    .map(|timeline| timeline.id.clone());
+                if let Some(id) = id {
+                    studio.apply(concat_project::Command::SelectTimeline { timeline_id: id });
+                }
+                self.keep(studio);
+                self.open = false;
             }
             GenerateMsg::Suggest(chapter, scene, shot) => {
                 self.suggest(studio, chapter, scene, shot)
@@ -1106,6 +1152,12 @@ impl GeneratePane {
             .job(studio)
             .filter(|_| !self.topic.trim().is_empty())
             .and_then(|job| job.research());
+        // Each Short as made into its own project, or not yet.
+        self.plan = self
+            .board
+            .as_ref()
+            .and(self.job(studio))
+            .and_then(|job| shorts::Plan::read(&job.dir));
         // The findings were for the video loaded before.
         self.checked = None;
         self.dirty = false;
@@ -1212,6 +1264,12 @@ impl GeneratePane {
             minutes: self.minutes,
             captions: self.captions,
             titles: self.titles,
+            // Export everything goes on across the projects it opens.
+            exports: std::mem::take(&mut self.exports),
+            export_back: self.export_back.take(),
+            export_home: self.export_home.take(),
+            export_dir: self.export_dir.take(),
+            export_started: self.export_started,
             ..GeneratePane::default()
         };
     }
@@ -2230,6 +2288,13 @@ impl GeneratePane {
     /// another into the video's folder, beside what goes up with each.
     fn export_all(&mut self, studio: &mut Studio) {
         let Some(job) = self.job(studio) else { return };
+        let Some(home) = studio
+            .session
+            .as_ref()
+            .map(|session| session.path().to_owned())
+        else {
+            return;
+        };
         if studio.export.phase == crate::ui::ExportPhase::Running || !self.exports.is_empty() {
             studio.notify(&t("generate.exportBusy"), true);
             return;
@@ -2238,17 +2303,31 @@ impl GeneratePane {
         // The thumbnail's timeline is a picture, saved as one, not a video.
         let thumbnail = format!(" · {}", t("generate.thumbnail"));
         let mut taken = HashSet::new();
-        let exports: Vec<(String, String)> = project
+        let mut exports: Vec<Exporting> = project
             .timelines
             .iter()
             .filter(|timeline| !timeline.clips.is_empty() && !timeline.name.ends_with(&thumbnail))
-            .map(|timeline| (timeline.id.clone(), unique_name(&timeline.name, &mut taken)))
+            .map(|timeline| {
+                Exporting::Timeline(timeline.id.clone(), unique_name(&timeline.name, &mut taken))
+            })
             .collect();
+        // Then each Short made, from its own project, into the video's
+        // folder beside the rest.
+        exports.extend(
+            self.plan
+                .iter()
+                .flat_map(|plan| &plan.shorts)
+                .filter(|short| !short.project.is_empty())
+                .map(|short| {
+                    Exporting::Short(short.project.clone(), unique_name(&short.title, &mut taken))
+                }),
+        );
         if exports.is_empty() {
             studio.notify(&t("export.nothingTimelineExport"), true);
             return;
         }
         self.export_back = Some(project.active_timeline_id.clone());
+        self.export_home = Some(home);
         // Looked over first: said, never held back on.
         let found = self.check_before_publishing(studio);
         if !found.is_empty() {
@@ -2257,6 +2336,7 @@ impl GeneratePane {
         studio.notify(&tf("generate.exportingAll", &[&exports.len()]), false);
         self.exports = exports;
         let _ = std::fs::create_dir_all(&job.dir);
+        self.export_dir = Some(job.dir);
         self.export_next(studio);
     }
 
@@ -2332,11 +2412,17 @@ impl GeneratePane {
     /// written; looks again in a moment while it is not. A file that
     /// failed stops the rest; the export sheet says why.
     fn export_next(&mut self, studio: &mut Studio) {
-        if studio.export.phase == crate::ui::ExportPhase::Running {
-            spawn_in_project(
+        // Waited on with `spawn`, not `spawn_in_project`: a Short is
+        // written from its own project, and the wait must outlive the
+        // switch to it.
+        let wait = || {
+            spawn(
                 || std::thread::sleep(std::time::Duration::from_secs(3)),
                 |studio, _, _, ()| studio.handle(Msg::Generate(GenerateMsg::ExportNext)),
-            );
+            )
+        };
+        if studio.export.phase == crate::ui::ExportPhase::Running {
+            wait();
             return;
         }
         // A file that failed, or one cancelled - the sheet back on its form
@@ -2346,12 +2432,18 @@ impl GeneratePane {
                 studio.export.phase,
                 crate::ui::ExportPhase::Failed | crate::ui::ExportPhase::Idle
             );
-        let job = self.job(studio);
-        if failed || self.exports.is_empty() || job.is_none() {
-            // Done, or stopped: back on the timeline that was open.
+        if failed || self.exports.is_empty() || self.export_dir.is_none() {
+            // Done, or stopped: back on the video's project, on the
+            // timeline that was open.
             let written = self.export_started && !failed;
             self.exports.clear();
             self.export_started = false;
+            self.export_dir = None;
+            if let Some(home) = self.export_home.take()
+                && let Err(error) = switch_project(studio, &home)
+            {
+                studio.notify(&error, true);
+            }
             if let Some(id) = self.export_back.take()
                 && studio.project().timelines.iter().any(|t| t.id == id)
             {
@@ -2362,22 +2454,47 @@ impl GeneratePane {
             }
             return;
         }
-        let (Some(job), (id, name)) = (job, self.exports.remove(0)) else {
+        let Some(dir) = self.export_dir.clone() else {
             return;
         };
-        // A timeline taken away since: passed over, not the open one
-        // exported under its name.
-        if !studio.project().timelines.iter().any(|t| t.id == id) {
-            self.export_next(studio);
-            return;
-        }
-        studio.apply(concat_project::Command::SelectTimeline { timeline_id: id });
-        export(job.dir.clone(), &name);
+        let name = match self.exports.remove(0) {
+            Exporting::Timeline(id, name) => {
+                // The video's own timelines come first, in its project.
+                if let Some(home) = self.export_home.clone()
+                    && let Err(error) = switch_project(studio, &home)
+                {
+                    studio.notify(&error, true);
+                    self.exports.clear();
+                    self.export_next(studio);
+                    return;
+                }
+                // A timeline taken away since: passed over, not the open
+                // one exported under its name.
+                if !studio.project().timelines.iter().any(|t| t.id == id) {
+                    self.export_next(studio);
+                    return;
+                }
+                studio.apply(concat_project::Command::SelectTimeline { timeline_id: id });
+                name
+            }
+            Exporting::Short(project, name) => {
+                // The Short's project, open for its one timeline to be
+                // written; one gone or empty is passed over.
+                if let Err(error) = switch_project(studio, &project) {
+                    log::warn!("generate: {name} not exported: {error}");
+                    self.export_next(studio);
+                    return;
+                }
+                if studio.timeline().clips.is_empty() {
+                    self.export_next(studio);
+                    return;
+                }
+                name
+            }
+        };
+        export(dir, &name);
         self.export_started = true;
-        spawn_in_project(
-            || std::thread::sleep(std::time::Duration::from_secs(3)),
-            |studio, _, _, ()| studio.handle(Msg::Generate(GenerateMsg::ExportNext)),
-        );
+        wait();
     }
 
     /// Keeps what goes up with each Short beside the video: its title, its
@@ -2596,76 +2713,141 @@ impl GeneratePane {
         );
     }
 
-    /// Cuts several Shorts from the video, each a stretch of its own, each
-    /// on a timeline of its own.
-    fn shorts(&mut self, studio: &mut Studio) {
+    /// Picks the video's Shorts for the results - [`shorts::PLANNED`]
+    /// stretches, each a different idea of it - on a worker, and keeps
+    /// them with the video. Nothing is made: each Short is made when asked.
+    fn plan_shorts(&mut self, studio: &mut Studio) {
         let (Some(board), Some(job)) = (self.board.clone(), self.job(studio)) else {
             return;
         };
         let (key, model) = studio.prefs.generate.writer();
-        let count = studio.prefs.generate.shorts_count();
         let brief = self.brief(studio);
         self.begin(t("generate.pickingShort"));
         self.phase = 3;
         spawn_in_project(
             move || {
                 let board = voice_timed(&job, &board);
-                let picks = writer::pick_shorts(&board, &brief, count, &key, &model)
+                let picks = writer::pick_shorts(&board, &brief, shorts::PLANNED, &key, &model)
                     .unwrap_or_else(|error| {
                         // As many all the same, from the start of the
                         // video on, when the writer cannot be asked.
                         log::warn!("generate: the Shorts' stretches: {error}");
-                        shorts::filled(&board, Vec::new(), count)
+                        shorts::filled(&board, Vec::new(), shorts::PLANNED)
                     });
-                picks
-                    .iter()
-                    .map(|pick| {
-                        let short = shorts::board(&board, pick);
-                        let made = job.gather(&short, true)?;
-                        Ok((short, made))
-                    })
-                    .collect::<Result<Vec<_>, String>>()
+                Ok(shorts::Plan::of(&board, picks))
             },
             |studio, _, _, result| {
-                studio.handle(Msg::Generate(GenerateMsg::ShortsReady(Box::new(result))))
+                studio.handle(Msg::Generate(GenerateMsg::ShortsPlanned(Box::new(result))))
             },
         );
     }
 
-    /// Lays the cut on a new timeline, as one undo step, and closes.
-    /// Picks a minute of the video for a Short - the writer's pick, or the
-    /// opening when there is no key or the pick does not fit - and gathers
-    /// its files, on a worker; nothing is made again.
-    fn short(&mut self, studio: &mut Studio) {
+    /// Gathers what Short `index` of the results is cut from, on a worker;
+    /// nothing is made or paid for again. It is laid down in a project of
+    /// its own, beside the video's, when it comes.
+    fn make_short(&mut self, studio: &mut Studio, index: usize) {
+        if self.running {
+            return;
+        }
         let (Some(board), Some(job)) = (self.board.clone(), self.job(studio)) else {
             return;
         };
-        let (key, model) = studio.prefs.generate.writer();
-        let brief = self.brief(studio);
-        self.begin(t("generate.pickingShort"));
+        let Some(planned) = self
+            .plan
+            .as_ref()
+            .and_then(|plan| plan.shorts.get(index))
+            .cloned()
+        else {
+            return;
+        };
+        self.begin(tf("generate.makingShort", &[&planned.title]));
         self.phase = 3;
+        self.making_short = Some(index);
         spawn_in_project(
             move || {
                 let board = voice_timed(&job, &board);
-                let pick = if key.trim().is_empty() {
-                    shorts::opening(&board)
-                } else {
-                    writer::pick_short(&board, &brief, &key, &model).unwrap_or_else(|error| {
-                        log::warn!("generate: the Short's minute: {error}");
-                        shorts::opening(&board)
-                    })
-                };
-                let short = shorts::board(&board, &pick);
+                let mut short = shorts::board(&board, &planned.pick);
+                short.title = planned.title.clone();
                 let made = job.gather(&short, true)?;
                 Ok((short, made))
             },
-            |studio, _, _, result| {
-                studio.handle(Msg::Generate(GenerateMsg::ShortReady(Box::new(result))))
+            move |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::ShortMade(
+                    index,
+                    Box::new(result),
+                )))
             },
         );
     }
 
-    fn cut(&mut self, studio: &mut Studio, board: &Storyboard, made: &Made, short: bool) {
+    /// Lays Short `index` down in a project of its own beside the video's,
+    /// leaving the window on the video: the project is on the recents list
+    /// to open, its captions and what goes up with it in the video's
+    /// folder.
+    fn short_project(
+        &mut self,
+        studio: &mut Studio,
+        index: usize,
+        board: &Storyboard,
+        made: &Made,
+    ) {
+        let (Some(job), Some(beside)) = (
+            self.job(studio),
+            studio
+                .session
+                .as_ref()
+                .map(|session| PathBuf::from(session.path())),
+        ) else {
+            return;
+        };
+        let Some(Prepared {
+            placements,
+            media,
+            options,
+            captioned,
+        }) = self.prepare_cut(studio, board, made, true)
+        else {
+            return;
+        };
+        let config = studio.host.dirs.config.clone();
+        let made_into = project_apart(&beside, &config, &board.title, board.frame(), |apart| {
+            let (_, left_out) = plan::cut(apart, board, &placements, &media, &options)?;
+            for path in &left_out {
+                log::warn!("generate: {path} was left out of the Short");
+            }
+            Ok(())
+        });
+        match made_into {
+            Ok(project) => {
+                if let Some(plan) = self.plan.as_mut()
+                    && let Some(short) = plan.shorts.get_mut(index)
+                {
+                    short.project = project;
+                    if let Err(error) = plan.keep(&job.dir) {
+                        log::warn!("generate: the Shorts' plan: {error}");
+                    }
+                }
+                if let Some(captioned) = &captioned {
+                    keep_captions(&job.dir, &board.title, captioned);
+                }
+                self.keep_shorts_text(studio, std::iter::once(board));
+                studio.notify(&tf("generate.shortSaved", &[&board.title]), false);
+            }
+            Err(error) => self.failed(error),
+        }
+    }
+
+    /// What a cut of `board` lays down from what was `made`: its plan,
+    /// the files it imports, its options, and the cards a captions file
+    /// is written from. `None`, and the sheet says why, when it cannot be
+    /// planned.
+    fn prepare_cut(
+        &mut self,
+        studio: &mut Studio,
+        board: &Storyboard,
+        made: &Made,
+        short: bool,
+    ) -> Option<Prepared> {
         let music = match self.music {
             AI_MUSIC => made.music.clone(),
             row => row.checked_sub(AI_MUSIC + 1).and_then(|row| {
@@ -2754,7 +2936,7 @@ impl GeneratePane {
             Ok(placements) => placements,
             Err(error) => {
                 self.message = error;
-                return;
+                return None;
             }
         };
         // The captions as a file of their own, for an upload page to take
@@ -2776,6 +2958,26 @@ impl GeneratePane {
             )
             .inspect_err(|error| log::warn!("generate: the captions file: {error}"))
             .ok()
+        };
+        Some(Prepared {
+            placements,
+            media,
+            options,
+            captioned,
+        })
+    }
+
+    /// Lays the cut on a new timeline of the window's project, as one
+    /// undo step, and closes.
+    fn cut(&mut self, studio: &mut Studio, board: &Storyboard, made: &Made, short: bool) {
+        let Some(Prepared {
+            placements,
+            media,
+            options,
+            captioned,
+        }) = self.prepare_cut(studio, board, made, short)
+        else {
+            return;
         };
         // One batch: the bookkeeping after each of the cut's clips is done
         // once, at the end.
@@ -2846,7 +3048,6 @@ impl GeneratePane {
                     }
                 }
                 if studio.prefs.generate.auto_export.unwrap_or(true)
-                    && !self.hold_export
                     && let Some(job) = self.job(studio)
                 {
                     export(job.dir, &board.title);
@@ -3116,6 +3317,25 @@ impl GeneratePane {
             script_summary: summary.unwrap_or_default().into(),
             status: self.status.as_str().into(),
             can_short: self.all_made && !self.running && away.is_none(),
+            results: self.all_made && away.is_none(),
+            shorts: std::rc::Rc::new(slint::VecModel::from(
+                self.plan
+                    .iter()
+                    .filter(|_| self.all_made && away.is_none())
+                    .flat_map(|plan| plan.shorts.iter().enumerate())
+                    .map(|(n, short)| ShortResult {
+                        title: short.title.as_str().into(),
+                        state: if self.making_short == Some(n) {
+                            1
+                        } else if short.project.is_empty() {
+                            0
+                        } else {
+                            2
+                        },
+                    })
+                    .collect::<Vec<_>>(),
+            ))
+            .into(),
             running: self.running || away.is_some(),
             progress: away.as_ref().map_or(self.progress, |run| run.progress),
             stage: away
@@ -3786,6 +4006,133 @@ fn warning_text(warning: &checklist::Warning) -> String {
     }
 }
 
+/// One file of Export everything.
+enum Exporting {
+    /// A timeline of the video's project: its id and the file's name.
+    Timeline(String, String),
+    /// A Short, from its own project: its folder and the file's name.
+    Short(String, String),
+}
+
+/// Opens the project in `path` in the window, the open one saved and
+/// closed first, as the start screen does; nothing when it is open
+/// already. A project that could not be saved stays open, and says why.
+fn switch_project(studio: &mut Studio, path: &str) -> Result<(), String> {
+    if studio
+        .session
+        .as_ref()
+        .is_some_and(|session| session.path() == path)
+    {
+        return Ok(());
+    }
+    let info = concat_host::projects::open(path)?;
+    if studio.session.is_some() {
+        studio.close_project();
+        if studio.session.is_some() {
+            return Err(t("generate.couldNotLeave"));
+        }
+    }
+    studio.open_project(info)
+}
+
+/// A cut ready to lay down; see [`GeneratePane::prepare_cut`].
+struct Prepared {
+    placements: Vec<plan::Placement>,
+    media: HashMap<String, NewMedia>,
+    options: Options,
+    /// The cards a captions file is written from, when there are any.
+    captioned: Option<Vec<plan::Placement>>,
+}
+
+/// A project of its own, made beside the window's, as the cut lays itself
+/// down in it: the window's project is not touched, and the cut is no undo
+/// step of it.
+struct Apart(concat_project::Editor);
+
+impl Editing for Apart {
+    fn apply(&mut self, command: Command) -> Option<String> {
+        self.0
+            .apply(command)
+            .inspect_err(|error| log::warn!("generate: a Short's project: {error:?}"))
+            .ok()
+            .and_then(|outcome| outcome.created_id)
+    }
+
+    fn lanes(&self) -> Vec<String> {
+        self.0
+            .project()
+            .active()
+            .tracks
+            .iter()
+            .map(|track| track.id.clone())
+            .collect()
+    }
+
+    fn media_of(&self, path: &str) -> Option<String> {
+        self.0
+            .project()
+            .media
+            .iter()
+            .find(|item| item.path == path)
+            .map(|item| item.id.clone())
+    }
+}
+
+/// Makes the project `name` beside `beside` (a project folder) holding
+/// the cut `lay` lays down, saves it and puts it on the recents list kept
+/// under `config`. A name already taken there gets a number after it: a
+/// project is never written over. The new project's folder.
+fn project_apart(
+    beside: &Path,
+    config: &Path,
+    name: &str,
+    (width, height): (u32, u32),
+    lay: impl FnOnce(&mut Apart) -> Result<(), String>,
+) -> Result<String, String> {
+    use concat_host::projects;
+    let location = beside
+        .parent()
+        .ok_or("the video's project has no folder around it")?;
+    let mut info = None;
+    let mut error = String::new();
+    for n in 1..100 {
+        let tried = if n == 1 {
+            name.trim().to_owned()
+        } else {
+            format!("{} {n}", name.trim())
+        };
+        match projects::create(&location.to_string_lossy(), &tried, width, height, 30, 1) {
+            Ok(made) => {
+                info = Some(made);
+                break;
+            }
+            Err(why) if why.contains("already exists") => error = why,
+            Err(why) => return Err(why),
+        }
+    }
+    let info = info.ok_or(error)?;
+    let settings = concat_project::DocumentSettings {
+        name: info.name.clone(),
+        width,
+        height,
+        rate_num: 30,
+        rate_den: 1,
+    };
+    let mut apart = Apart(concat_project::Editor::with_video(settings.video()));
+    let first = apart.0.project().active_timeline_id.clone();
+    lay(&mut apart)?;
+    // The cut is on a timeline of its own: the empty one a new project
+    // starts with goes.
+    if apart.0.project().timelines.len() > 1 {
+        apart.apply(Command::RemoveTimeline { timeline_id: first });
+    }
+    projects::save(&info.path, &apart.0.to_document(&settings))?;
+    if let Err(why) = projects::remember(config, &info) {
+        log::warn!("generate: the recents list: {why}");
+    }
+    Ok(info.path)
+}
+
 /// The picture models the chosen maker's key can run, as last asked.
 #[derive(Default)]
 struct PictureModels {
@@ -4148,6 +4495,45 @@ fn read_card_lines(text: &str) -> Vec<concat_generate::storyboard::GraphicItem> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Short is a project of its own beside the video's: its cut on its
+    /// one timeline, on the recents list, and a name taken gets a number,
+    /// never written over.
+    #[test]
+    fn a_short_is_a_project_beside_the_video() {
+        let root = std::env::temp_dir().join(format!("concat-apart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let video = root.join("Video");
+        let config = root.join("config");
+        std::fs::create_dir_all(&video).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        let lay = |apart: &mut Apart| {
+            let id = apart.apply(Command::AddTimeline).ok_or("no timeline")?;
+            apart.apply(Command::RenameTimeline {
+                timeline_id: id,
+                name: "Short".into(),
+            });
+            Ok(())
+        };
+        let first = project_apart(&video, &config, "Short", (1080, 1920), lay).unwrap();
+        let second = project_apart(&video, &config, "Short", (1080, 1920), lay).unwrap();
+        assert_ne!(first, second);
+        assert!(second.ends_with("Short 2"), "{second}");
+        let document = concat_host::projects::read_document(&first)
+            .unwrap()
+            .unwrap();
+        let editor = concat_project::Editor::from_document(&document).unwrap();
+        let names: Vec<&str> = editor
+            .project()
+            .timelines
+            .iter()
+            .map(|timeline| timeline.name.as_str())
+            .collect();
+        assert_eq!(names, ["Short"]);
+        let recents = concat_host::projects::list(&config);
+        assert!(recents.iter().any(|info| info.path == first));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// Each video of Export everything gets a file name of its own, two
     /// names that come to the same file told apart.

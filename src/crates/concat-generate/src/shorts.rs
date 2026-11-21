@@ -9,14 +9,20 @@
 //! laid on a timeline of its own, 9:16, its pictures filling the tall
 //! frame and its captions a few words at a time.
 
+use std::path::{Path, PathBuf};
+
 use crate::storyboard::{Chapter, Storyboard};
+
+/// How many Shorts a video's results offer: four, the owner's number.
+pub const PLANNED: usize = 4;
 
 /// The longest a Short runs, in seconds: what the platforms take.
 pub const LONGEST: f64 = 60.0;
 
 /// The minute picked: which scenes, in order, the line over its start and
 /// the Short's own title.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Pick {
     /// The scenes' ids, a run of them in a row.
     pub scenes: Vec<String>,
@@ -181,9 +187,104 @@ pub fn board(long: &Storyboard, pick: &Pick) -> Storyboard {
     }
 }
 
+/// The Shorts planned for one video, kept in its job's folder: the
+/// minutes picked, each with the project it was made into once it is.
+/// What the sheet's results list, a Short at a time, across a restart:
+/// each Short is a project of its own beside the video's, made when asked
+/// and never in the video's own project, so the video stays as it was.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Plan {
+    /// The Shorts, in the order the writer ranked them.
+    pub shorts: Vec<Planned>,
+}
+
+/// One Short of a [`Plan`].
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Planned {
+    /// Its minute of the video.
+    pub pick: Pick,
+    /// Its title, unique among the plan's: its project's name.
+    pub title: String,
+    /// The folder of the project it was made into; empty until it is.
+    pub project: String,
+}
+
+impl Plan {
+    /// The plan of `picks` from `long`: each titled as its storyboard
+    /// would be, no two alike.
+    pub fn of(long: &Storyboard, picks: Vec<Pick>) -> Plan {
+        let mut taken: Vec<String> = Vec::new();
+        let shorts = picks
+            .into_iter()
+            .enumerate()
+            .map(|(n, pick)| {
+                let mut title = board(long, &pick).title;
+                if taken.contains(&title) {
+                    title = format!("{title} {}", n + 1);
+                }
+                taken.push(title.clone());
+                Planned {
+                    pick,
+                    title,
+                    project: String::new(),
+                }
+            })
+            .collect();
+        Plan { shorts }
+    }
+
+    /// Where a job's plan is kept.
+    pub fn file(job_dir: &Path) -> PathBuf {
+        job_dir.join("shorts.json")
+    }
+
+    /// The plan kept in `job_dir`, if one was. A Short whose project is
+    /// gone from the disk - deleted by hand - reads as not made.
+    pub fn read(job_dir: &Path) -> Option<Plan> {
+        let bytes = std::fs::read(Plan::file(job_dir)).ok()?;
+        let mut plan: Plan = serde_json::from_slice(&bytes).ok()?;
+        for short in &mut plan.shorts {
+            if !short.project.is_empty() && !Path::new(&short.project).is_dir() {
+                short.project.clear();
+            }
+        }
+        Some(plan)
+    }
+
+    /// Keeps the plan in `job_dir`.
+    pub fn keep(&self, job_dir: &Path) -> Result<(), String> {
+        std::fs::create_dir_all(job_dir).map_err(|error| error.to_string())?;
+        let bytes = serde_json::to_vec_pretty(self).map_err(|error| error.to_string())?;
+        std::fs::write(Plan::file(job_dir), bytes).map_err(|error| error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A plan titles its Shorts apart, is kept and read back, and a Short
+    /// whose project is gone reads as not made.
+    #[test]
+    fn a_plan_is_kept_and_read_back() {
+        let board = long();
+        let picks = filled(&board, Vec::new(), 2);
+        let mut plan = Plan::of(&board, picks);
+        assert_eq!(plan.shorts.len(), 2);
+        assert_ne!(plan.shorts[0].title, plan.shorts[1].title);
+        let dir = std::env::temp_dir().join(format!("concat-plan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        plan.shorts[0].project = dir.to_string_lossy().into_owned();
+        plan.shorts[1].project = dir.join("gone").to_string_lossy().into_owned();
+        plan.keep(&dir).unwrap();
+        let read = Plan::read(&dir).unwrap();
+        assert_eq!(read.shorts[0].project, plan.shorts[0].project);
+        assert!(read.shorts[1].project.is_empty());
+        assert_eq!(read.shorts[1].pick, plan.shorts[1].pick);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn long() -> Storyboard {
         let mut board: Storyboard = serde_json::from_str(
