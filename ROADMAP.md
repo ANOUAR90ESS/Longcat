@@ -716,6 +716,22 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## Each project its own Long video (owner, 22 Nov)
+
+The owner's phone showed a new project open on the last project's
+channel, format and 30-day plan: the sheet's choices were the app's, one
+set for every project, and the plan a channel's, made for a format no
+longer chosen.
+
+- done: each project keeps the sheet's choices in its own folder
+  (`long-video.json`, never a key in it) and brings them back when it
+  opens; a project that kept none - a new one - starts on no channel, no
+  look and no format, the keys, voices and makers as they were. A Short
+  made from a video takes the video's choices.
+- done: a plan knows whether it was made of machines to build; made for
+  another kind of format than the one chosen, it says so, and neither
+  "Make this" nor "Make the whole plan" runs until it is planned again.
+
 ## "What are we building?" (owner, 22 Nov)
 
 From four Reels the owner sent ("شكون قاليك": an engine from a tin can, a

@@ -219,6 +219,8 @@ export struct GenerateSheetData {
     youtube-numbers: string,
     /// How many of the plan's videos are not made yet.
     plan-left: int,
+    /// The plan was made for another kind of format: plan it again.
+    plan-stale: bool,
     plan-cost: string,
     plan: [PlanRow],
     look-words: string,
@@ -1517,7 +1519,14 @@ export component GenerateDialog inherits Modal {
                         // Every video of the plan not made yet, one after
                         // another: each looked over, held back from export
                         // when something is wrong. Cancel stops it.
-                        if root.data.plan-left > 0: HorizontalLayout {
+                        if root.data.plan-stale: Text {
+                            text: I18n.t("generate.planStale");
+                            color: Theme.danger;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.plan-left > 0 && !root.data.plan-stale: HorizontalLayout {
                             alignment: start;
 
                             Button {
@@ -1529,7 +1538,7 @@ export component GenerateDialog inherits Modal {
                             }
                         }
 
-                        if root.data.plan-left > 0: Text {
+                        if root.data.plan-left > 0 && !root.data.plan-stale: Text {
                             text: I18n.t("generate.makePlanHint");
                             color: Theme.fg-dim;
                             font-size: Theme.fs-sm;
@@ -1566,6 +1575,7 @@ export component GenerateDialog inherits Modal {
                             if !entry.made: Button {
                                 label: I18n.t("generate.makeThis");
                                 ghost: true;
+                                enabled: !root.data.plan-stale;
                                 clicked => { root.use-planned(index); }
                             }
                         }

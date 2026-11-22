@@ -44,6 +44,11 @@ pub struct Entry {
 pub struct Calendar {
     /// The videos, by day.
     pub entries: Vec<Entry>,
+    /// Planned as machines to build ("What are we building?"), each
+    /// titled by its name: a plan of the other kind does not fit that
+    /// format, nor this one the others.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub machines: bool,
 }
 
 impl Calendar {
@@ -202,6 +207,7 @@ pub fn of_answer(got: &Value, made: &[String], count: usize) -> Calendar {
                 made: false,
             })
             .collect(),
+        machines: false,
     }
 }
 
@@ -230,7 +236,8 @@ pub fn plan(
     let got = crate::providers::retry(|| {
         crate::writer::call_as(key, model, SYSTEM, &[], &tool(), &prompt, &[])
     })?;
-    let calendar = of_answer(&got, made, count);
+    let mut calendar = of_answer(&got, made, count);
+    calendar.machines = machines;
     if calendar.entries.is_empty() {
         return Err("the writer planned no videos".to_owned());
     }
@@ -301,6 +308,7 @@ mod tests {
                     ..Entry::default()
                 },
             ],
+            machines: true,
         };
         assert!(plan.mark_made(" One "));
         assert!(!plan.mark_made("Three"));

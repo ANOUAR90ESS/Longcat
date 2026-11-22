@@ -541,7 +541,7 @@ impl GeneratePane {
                     33 => prefs.youtube_client_secret = text,
                     _ => return,
                 }
-                studio.prefs.save(&studio.host.dirs);
+                studio.save_generate();
                 // A key typed - the picture maker's, or OpenAI's from the
                 // writer's row - is a list of models to ask for again.
                 if matches!(field, 21 | 29) {
@@ -560,7 +560,7 @@ impl GeneratePane {
                     2 => prefs.aspect = index.min(ASPECTS.len() - 1),
                     3 => {
                         prefs.voice = Some(index.min(2));
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         self.tally(studio);
                         return;
                     }
@@ -590,7 +590,7 @@ impl GeneratePane {
                             prefs.clips = Some(look.clips);
                             prefs.visuals = 0;
                         }
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         self.tally(studio);
                         return;
                     }
@@ -621,7 +621,7 @@ impl GeneratePane {
                         if let Some(row) = index.checked_sub(1)
                             && studio.prefs.generate.apply_template(row)
                         {
-                            studio.prefs.save(&studio.host.dirs);
+                            studio.save_generate();
                             self.load_look_pictures(studio);
                             self.tally(studio);
                         }
@@ -633,7 +633,7 @@ impl GeneratePane {
                             .and_then(|row| logo_items(studio).into_iter().nth(row))
                             .unwrap_or_default();
                         studio.prefs.generate.brand_logo = picked;
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         return;
                     }
                     10 => prefs.level = Some(index.min(Level::ALL.len() - 1)),
@@ -643,7 +643,7 @@ impl GeneratePane {
                     23 => prefs.writer = index.min(1),
                     20 => {
                         prefs.picture_maker = index.min(2);
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         self.ask_picture_models(studio);
                         self.tally(studio);
                         return;
@@ -658,13 +658,13 @@ impl GeneratePane {
                     }
                     21 => {
                         prefs.clip_maker = index.min(2);
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         self.tally(studio);
                         return;
                     }
                     11 => {
                         prefs.visuals = index.min(1);
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         self.tally(studio);
                         return;
                     }
@@ -676,44 +676,44 @@ impl GeneratePane {
                         };
                         prefs.replicate_image_model = model.to_owned();
                         prefs.image_price = price.to_owned();
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         self.tally(studio);
                         return;
                     }
                     _ => return,
                 }
-                studio.prefs.save(&studio.host.dirs);
+                studio.save_generate();
             }
             GenerateMsg::Toggled(field, on) => match field {
                 0 => self.captions = on,
                 1 => self.titles = on,
                 2 => {
                     studio.prefs.generate.auto_export = Some(on);
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 3 => {
                     studio.prefs.generate.research = Some(on);
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 4 => {
                     studio.prefs.generate.sounds = Some(on);
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 5 => {
                     studio.prefs.generate.brand_bumpers = on;
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 6 => {
                     studio.prefs.generate.hook = Some(on);
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 7 => {
                     studio.prefs.generate.deep = Some(on);
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 8 => {
                     studio.prefs.generate.picture_check = Some(on);
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 _ => {}
             },
@@ -860,7 +860,7 @@ impl GeneratePane {
                     };
                     let template = prefs.as_template(&name);
                     prefs.keep_template(template);
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                     studio.notify(&tf("generate.seriesSaved", &[&name]), false);
                 }
                 4 => self.plan_shorts(studio),
@@ -877,7 +877,7 @@ impl GeneratePane {
                     let prefs = &mut studio.prefs.generate;
                     prefs.youtube_token.clear();
                     prefs.youtube_channel.clear();
-                    studio.prefs.save(&studio.host.dirs);
+                    studio.save_generate();
                 }
                 9 => self.niche_open = !self.niche_open,
                 7 => {
@@ -905,7 +905,7 @@ impl GeneratePane {
                         let prefs = &mut studio.prefs.generate;
                         prefs.youtube_token = token;
                         prefs.youtube_channel = channel.clone();
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         studio.notify(&tf("generate.youtubeConnected", &[&channel]), false);
                     }
                     Err(error) => self.failed(error),
@@ -970,6 +970,10 @@ impl GeneratePane {
                 }
             }
             GenerateMsg::UsePlanned(index) => {
+                if plan_stale(self.calendar.as_ref(), &studio.prefs.generate) {
+                    studio.notify(&t("generate.planStale"), true);
+                    return;
+                }
                 let title = self
                     .calendar
                     .as_ref()
@@ -1011,7 +1015,7 @@ impl GeneratePane {
                         // The new video is the sheet's now, in its language.
                         self.topic = topic;
                         studio.prefs.generate.language = language;
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         self.board = Some(board.clone());
                         self.dirty = false;
                         self.checked = None;
@@ -1220,7 +1224,7 @@ impl GeneratePane {
                         // The channel's memory: the next script is told
                         // this one was made.
                         studio.prefs.generate.remember(&board.title);
-                        studio.prefs.save(&studio.host.dirs);
+                        studio.save_generate();
                         // A video of the channel's plan, made: marked so.
                         if let Some(calendar) = self.calendar.as_mut()
                             && calendar.mark_made(&self.topic)
@@ -1858,7 +1862,7 @@ impl GeneratePane {
         };
         if !wanted.names.iter().any(|name| name == now) {
             *chosen = first;
-            studio.prefs.save(&studio.host.dirs);
+            studio.save_generate();
         }
     }
 
@@ -2850,7 +2854,7 @@ impl GeneratePane {
         {
             prefs.apply_template(row);
         }
-        studio.prefs.save(&studio.host.dirs);
+        studio.save_generate();
         self.ideas = chosen
             .first_videos
             .iter()
@@ -2915,8 +2919,7 @@ impl GeneratePane {
         let per_week = calendar::PER_WEEK[per_week_row(&prefs)];
         // A channel that makes "What are we building?" plans machines to
         // build, by their names: the topic that format takes.
-        let machines =
-            VideoFormat::ALL[prefs.format.min(VideoFormat::ALL.len() - 1)] == VideoFormat::Build;
+        let machines = builds(&prefs);
         self.begin(t("generate.planBusy"));
         self.phase = 0;
         spawn_in_project(
@@ -2933,6 +2936,10 @@ impl GeneratePane {
     /// and marked made in the plan as its script is written. Cancel stops
     /// the one under way; Create carries it on where it stopped.
     fn make_plan(&mut self, studio: &mut Studio) {
+        if plan_stale(self.calendar.as_ref(), &studio.prefs.generate) {
+            studio.notify(&t("generate.planStale"), true);
+            return;
+        }
         let left: Vec<String> = self
             .calendar
             .iter()
@@ -3126,7 +3133,7 @@ impl GeneratePane {
             let channel = prefs.as_template(&name);
             prefs.keep_template(channel);
         }
-        studio.prefs.save(&studio.host.dirs);
+        studio.save_generate();
         self.load_look_pictures(studio);
     }
 
@@ -3927,6 +3934,7 @@ impl GeneratePane {
                 .filter(|entry| !entry.made)
                 .count() as i32,
             plan_cost: self.plan_cost(studio).into(),
+            plan_stale: plan_stale(self.calendar.as_ref(), &studio.prefs.generate),
             plan: std::rc::Rc::new(slint::VecModel::from(
                 self.calendar
                     .iter()
@@ -4731,6 +4739,16 @@ fn switch_project(studio: &mut Studio, path: &str) -> Result<(), String> {
         return Ok(());
     }
     let info = concat_host::projects::open(path)?;
+    // A project made from this one - a Short - that kept no choices of
+    // its own takes this one's: the same channel, not none.
+    let sheet = Path::new(path).join(crate::prefs::PROJECT_SHEET);
+    if studio.session.is_some()
+        && !sheet.exists()
+        && let Ok(bytes) = serde_json::to_vec_pretty(&studio.prefs.generate.project_choices())
+        && let Err(error) = std::fs::write(&sheet, bytes)
+    {
+        log::warn!("generate: giving the project its choices: {error}");
+    }
     if studio.session.is_some() {
         studio.close_project();
         if studio.session.is_some() {
@@ -5139,6 +5157,18 @@ fn hashtags(tags: &[String]) -> String {
         .map(|tag| format!("#{}", tag.trim_start_matches('#')))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Whether the format chosen is "What are we building?".
+fn builds(prefs: &crate::prefs::GeneratePrefs) -> bool {
+    VideoFormat::ALL[prefs.format.min(VideoFormat::ALL.len() - 1)] == VideoFormat::Build
+}
+
+/// Whether the channel's plan was made for another kind of format than
+/// the one chosen: machines to build for any other, or the other way.
+fn plan_stale(calendar: Option<&calendar::Calendar>, prefs: &crate::prefs::GeneratePrefs) -> bool {
+    calendar
+        .is_some_and(|calendar| !calendar.entries.is_empty() && calendar.machines != builds(prefs))
 }
 
 /// Whether a series is saved under the ready channel's name.
