@@ -207,6 +207,7 @@ pub fn of_answer(got: &Value, made: &[String], count: usize) -> Calendar {
                 made: false,
             })
             .collect(),
+        machines: false,
     }
 }
 
