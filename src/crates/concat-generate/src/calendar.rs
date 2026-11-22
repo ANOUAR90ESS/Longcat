@@ -111,8 +111,15 @@ const SYSTEM: &str = "You plan the next month of a YouTube channel of narrated, 
     something of its own.";
 
 /// The prompt for `count` videos for the channel `channel` describes, in
-/// `language`, none like `made`.
-pub fn prompt(channel: &str, language: &str, made: &[String], count: usize) -> String {
+/// `language`, none like `made`; with `machines`, each video is a machine
+/// to build ("What are we building?"), named and nothing more.
+pub fn prompt(
+    channel: &str,
+    language: &str,
+    made: &[String],
+    count: usize,
+    machines: bool,
+) -> String {
     let mut prompt = format!(
         "The channel, as its owner describes it:\n{}\nLanguage of the channel: {language}\n",
         channel.trim()
@@ -120,12 +127,23 @@ pub fn prompt(channel: &str, language: &str, made: &[String], count: usize) -> S
     if !made.is_empty() {
         prompt += &format!("Already made - nothing like these: {}\n", made.join("; "));
     }
-    prompt += &format!(
-        "\nPlan its next {count} long videos, in the order they go up, the first the most \
-         likely to be found and watched to the end. Each a specific question, story or claim, \
-         never a broad subject; no two in a row alike in subject or angle. For each: a title of \
-         at most ten words and, in one sentence, why a viewer clicks - both in {language}."
-    );
+    prompt += &if machines {
+        format!(
+            "\nEvery video of this channel builds one machine or object in front of the viewer, \
+             part by part, from something silly, and names it only at the end. Plan its next \
+             {count}, in the order they go up, the first the one most people use without knowing \
+             how it works. For each: as the title, only the machine's name, in {language} (a \
+             submarine, an electric razor, a lift) - never a sentence; and, in one sentence, the \
+             surprise in how it works, in {language}. No two in a row from the same field."
+        )
+    } else {
+        format!(
+            "\nPlan its next {count} long videos, in the order they go up, the first the most \
+             likely to be found and watched to the end. Each a specific question, story or claim, \
+             never a broad subject; no two in a row alike in subject or angle. For each: a title of \
+             at most ten words and, in one sentence, why a viewer clicks - both in {language}."
+        )
+    };
     prompt
 }
 
@@ -190,11 +208,14 @@ pub fn of_answer(got: &Value, made: &[String], count: usize) -> Calendar {
 /// A plan of `per_week` long videos a week over [`DAYS`] for the channel
 /// `channel` describes, in `language`, none like `made`, asked of the
 /// writer (`key`, `model`).
+/// With `machines`, each video is a machine to build; see [`prompt`].
+#[allow(clippy::too_many_arguments)]
 pub fn plan(
     channel: &str,
     language: &str,
     made: &[String],
     per_week: u32,
+    machines: bool,
     key: &str,
     model: &str,
 ) -> Result<Calendar, String> {
@@ -205,7 +226,7 @@ pub fn plan(
         return Err("the channel has no name or description to plan for".to_owned());
     }
     let count = Calendar::count_for(per_week);
-    let prompt = prompt(channel, language, made, count);
+    let prompt = prompt(channel, language, made, count, machines);
     let got = crate::providers::retry(|| {
         crate::writer::call_as(key, model, SYSTEM, &[], &tool(), &prompt, &[])
     })?;
@@ -250,6 +271,17 @@ mod tests {
         assert_eq!(titles, ["New one", "Third"]);
         assert_eq!(plan.entries[0].day, 1);
         assert_eq!(plan.entries[1].day, 16);
+    }
+
+    /// A plan of machines asks for their names alone; a plan of videos
+    /// for titles.
+    #[test]
+    fn a_plan_of_machines_asks_for_names() {
+        let machines = prompt("A channel", "English", &[], 5, true);
+        assert!(machines.contains("only the machine's name"));
+        let videos = prompt("A channel", "English", &[], 5, false);
+        assert!(videos.contains("a title of at most ten words"));
+        assert!(!videos.contains("machine's name"));
     }
 
     /// A video made is marked, the next is the first not made, and the

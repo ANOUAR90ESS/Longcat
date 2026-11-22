@@ -293,6 +293,8 @@
   "generate.formatCustomHint": "A format sets the frame, the length and the look for one kind of video, and tells the writer its shape. You can still change anything after.",
   "generate.formatLesson": "Simple lesson",
   "generate.formatLessonHint": "Three minutes, wide. One concept from an everyday question, one analogy carried through, drawn as it is explained, three things to remember at the end.",
+  "generate.formatBuild": "What are we building?",
+  "generate.formatBuildHint": "Type only a machine's name - a submarine, an electric razor. Three minutes, upright: it is built from an everyday object, one problem and one part at a time, every shot a clip of the same object growing, and its name kept back until the end.",
   "generate.formatMinute": "Explained in a minute",
   "generate.formatMinuteHint": "One minute, upright, for Shorts, Reels and TikTok. Opens on a situation or a question, answers in a few short beats with the same two characters in every picture, ends on a question to the viewer.",
   "generate.formatStory": "Documentary story",

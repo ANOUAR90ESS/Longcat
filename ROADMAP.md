@@ -716,6 +716,49 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## "What are we building?" (owner, 22 Nov)
+
+From four Reels the owner sent ("شكون قاليك": an engine from a tin can, a
+washing machine from a bidon, a drone from four fans, a plane from a
+bus): the machine is built in front of the viewer from something silly,
+one problem and one part at a time, its name kept back until the end -
+"What are we building?" stays in the corner, and the viewer stays to
+find out. The owner types only the machine's name; English or Spanish.
+One release when all four stages are done.
+
+- A. **The writing** - done. `VideoFormat::Build` ("What are we
+  building?" in the sheet's formats): the writer reads up on the real
+  machine, opens on an everyday object doing its job badly, then twelve
+  to eighteen scenes each a problem and the one part that fixes it ("you
+  add..."), stickers "⚠ problem" and "✓ part", the name never said until
+  the reveal, a question to end on. Every shot is the same object in the
+  same studio, its prompt the whole object as built so far, and a clip of
+  the new part arriving. The format sets three minutes, upright, every
+  shot a clip, captions a few words at a time.
+- B. **Scenes that follow on** - done. The board is written `chained`;
+  its shots are made one at a time, in order. Each shot's picture is the
+  shot before's edited - "keep this exact picture ... change only this"
+  (`Pictures::edit`: OpenAI's image edits, Gemini with the picture given;
+  made anew where the maker does not edit, Replicate). Each clip runs
+  from the shot before's picture to its own (`Clips::make_direct`'s last
+  frame: Kling's `image_tail` in its pro mode, Seedance's first and last
+  frames; asked again from the first alone where it is not taken), so the
+  machine grows in one take. No hook is written apart for it: it would
+  give the name away.
+- C. **On screen** - done. A chained board's first sticker - its
+  question - is kept at the top of the frame from the first scene until
+  the last, which answers it (`Kind::Question`), instead of shown as a
+  sticker. A sticker starting "⚠" is plated red, one starting "✓" green
+  (`plate_of`), others the channel's colour. Each caption's word lands in
+  red on a chained board unless the channel has a colour of its own.
+- D. **Joined up** - done. A channel whose format is "What are we
+  building?" has its month planned as machines to build: each entry's
+  title is a machine's name alone (a submarine, an electric razor), its
+  angle the surprise in how it works, no two in a row from one field
+  (`calendar::prompt` with `machines`). "Make this" and "Make the whole
+  plan" write each with the format, so a name becomes its video. One
+  release for the four stages.
+
 ## Two fixes from the owner's log (21 Nov)
 
 - The picture check's redrawing said nothing: a still that failed was

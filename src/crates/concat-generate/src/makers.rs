@@ -82,6 +82,27 @@ impl Pictures {
             Pictures::Gemini { key, model } => gemini_image(key, model, prompt, aspect, dir, stem),
         }
     }
+    /// The picture `from` changed as `prompt` says - a part added, the
+    /// rest kept - saved as `dir`/`stem`: how a machine built a part at a
+    /// time keeps one look from shot to shot. OpenAI and Gemini edit a
+    /// picture; Replicate's models are not asked, and the caller makes a
+    /// new picture instead.
+    pub fn edit(
+        &self,
+        from: &Path,
+        prompt: &str,
+        aspect: &str,
+        dir: &Path,
+        stem: &str,
+    ) -> Result<PathBuf, String> {
+        match self {
+            Pictures::Replicate { .. } => Err("Replicate's pictures are not edited".to_owned()),
+            Pictures::OpenAi { key, model } => {
+                openai_edit(key, model, from, prompt, aspect, dir, stem)
+            }
+            Pictures::Gemini { key, model } => gemini_edit(key, model, from, prompt, dir, stem),
+        }
+    }
 }
 
 /// Who makes the clips.
@@ -119,12 +140,38 @@ impl Clips {
     /// as `prompt` says, about `seconds` long, saved as `dir`/`stem`.
     /// Only for the services reached directly; a Replicate model is run
     /// by the job, which reads what it takes.
+    /// With `last`, the clip is asked to end on that picture, so a
+    /// machine built a part at a time grows in one take from one keyframe
+    /// to the next; a service or model that will not take a last frame is
+    /// asked again without one.
+    #[allow(clippy::too_many_arguments)]
     pub fn make_direct(
         &self,
         prompt: &str,
         seconds: f64,
         aspect: &str,
         frame: Option<&Path>,
+        last: Option<&Path>,
+        dir: &Path,
+        stem: &str,
+    ) -> Result<PathBuf, String> {
+        match self.make_between(prompt, seconds, aspect, frame, last, dir, stem) {
+            Err(error) if last.is_some() && !error.contains("needs an API") => {
+                log::warn!("{stem}: a last frame was not taken ({error}); made from the first");
+                self.make_between(prompt, seconds, aspect, frame, None, dir, stem)
+            }
+            made => made,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_between(
+        &self,
+        prompt: &str,
+        seconds: f64,
+        aspect: &str,
+        frame: Option<&Path>,
+        last: Option<&Path>,
         dir: &Path,
         stem: &str,
     ) -> Result<PathBuf, String> {
@@ -137,10 +184,10 @@ impl Clips {
                 secret_key,
                 model,
             } => kling_clip(
-                access_key, secret_key, model, prompt, seconds, aspect, frame, dir, stem,
+                access_key, secret_key, model, prompt, seconds, aspect, frame, last, dir, stem,
             ),
             Clips::Seedance { key, model } => {
-                seedance_clip(key, model, prompt, seconds, aspect, frame, dir, stem)
+                seedance_clip(key, model, prompt, seconds, aspect, frame, last, dir, stem)
             }
         }
     }
@@ -315,6 +362,136 @@ fn openai_image(
     Err("OpenAI answered without a picture".to_owned())
 }
 
+/// What an edit is told besides its prompt: the picture is the same
+/// object, kept, and only the change asked for is made.
+fn edit_prompt(prompt: &str) -> String {
+    format!(
+        "Keep this exact picture - the same object, background, floor, light, camera angle \
+         and style - and change only this: {}",
+        prompt.trim()
+    )
+}
+
+/// A multipart form body of `fields` and one file, with its boundary.
+fn multipart(fields: &[(&str, &str)], file: (&str, &str, &[u8])) -> (String, Vec<u8>) {
+    let boundary = format!("concat{:x}", now() ^ 0x5f3759df);
+    let mut body = Vec::new();
+    for (name, value) in fields {
+        body.extend(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    let (name, filename, bytes) = file;
+    body.extend(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; \
+             filename=\"{filename}\"\r\nContent-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend(bytes);
+    body.extend(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, body)
+}
+
+/// `from` edited by OpenAI's image model.
+fn openai_edit(
+    key: &str,
+    model: &str,
+    from: &Path,
+    prompt: &str,
+    aspect: &str,
+    dir: &Path,
+    stem: &str,
+) -> Result<PathBuf, String> {
+    if key.trim().is_empty() {
+        return Err("OpenAI needs an API key".to_owned());
+    }
+    let model = if model.trim().is_empty() {
+        OPENAI_IMAGE_MODEL
+    } else {
+        model.trim()
+    };
+    let bytes = std::fs::read(from).map_err(|error| format!("{}: {error}", from.display()))?;
+    let prompt = edit_prompt(prompt);
+    let (boundary, body) = multipart(
+        &[
+            ("model", model),
+            ("prompt", &prompt),
+            ("size", openai_size(aspect)),
+            ("quality", "high"),
+            ("n", "1"),
+        ],
+        ("image", "frame.png", &bytes),
+    );
+    let answer: Value = agent()
+        .post("https://api.openai.com/v1/images/edits")
+        .set("authorization", &format!("Bearer {}", key.trim()))
+        .set(
+            "content-type",
+            &format!("multipart/form-data; boundary={boundary}"),
+        )
+        .send_bytes(&body)
+        .map_err(|error| refused("OpenAI", error))?
+        .into_json()
+        .map_err(|error| error.to_string())?;
+    let data = answer["data"][0]["b64_json"]
+        .as_str()
+        .ok_or("OpenAI answered without an edited picture")?;
+    write_picture(&decoded(data, "OpenAI")?, dir, stem)
+}
+
+/// `from` edited by a Gemini image model; Imagen does not edit.
+fn gemini_edit(
+    key: &str,
+    model: &str,
+    from: &Path,
+    prompt: &str,
+    dir: &Path,
+    stem: &str,
+) -> Result<PathBuf, String> {
+    if key.trim().is_empty() {
+        return Err("Gemini needs an API key".to_owned());
+    }
+    let model = if model.trim().is_empty() {
+        GEMINI_IMAGE_MODEL
+    } else {
+        model.trim()
+    };
+    if model.starts_with("imagen") {
+        return Err("Imagen does not edit a picture".to_owned());
+    }
+    let bytes = std::fs::read(from).map_err(|error| format!("{}: {error}", from.display()))?;
+    let mime = match providers::sniffed_extension(from) {
+        Some("jpg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        _ => "image/png",
+    };
+    let answer: Value = agent()
+        .post(&format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        ))
+        .set("x-goog-api-key", key.trim())
+        .send_json(json!({
+            "contents": [{"parts": [
+                {"inlineData": {
+                    "mimeType": mime,
+                    "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+                }},
+                {"text": edit_prompt(prompt)},
+            ]}],
+            "generationConfig": {"responseModalities": ["IMAGE"]},
+        }))
+        .map_err(|error| refused("Gemini", error))?
+        .into_json()
+        .map_err(|error| error.to_string())?;
+    let data = gemini_picture(&answer)?;
+    write_picture(&decoded(data, "Gemini")?, dir, stem)
+}
+
 /// One picture from Gemini, or from Imagen when the model is one.
 fn gemini_image(
     key: &str,
@@ -445,6 +622,7 @@ fn kling_clip(
     seconds: f64,
     aspect: &str,
     frame: Option<&Path>,
+    last: Option<&Path>,
     dir: &Path,
     stem: &str,
 ) -> Result<PathBuf, String> {
@@ -472,6 +650,12 @@ fn kling_clip(
     body["prompt"] = json!(prompt);
     body["duration"] = json!(five_or_ten(seconds).to_string());
     body["mode"] = json!("std");
+    // The picture it ends on: Kling takes it in its professional mode.
+    if let (Some(last), Some(_)) = (last, frame) {
+        let bytes = std::fs::read(last).map_err(|error| format!("{}: {error}", last.display()))?;
+        body["image_tail"] = json!(base64::engine::general_purpose::STANDARD.encode(bytes));
+        body["mode"] = json!("pro");
+    }
     let agent = agent();
     let start = || -> Result<String, String> {
         let answer: Value = agent
@@ -520,6 +704,7 @@ fn seedance_clip(
     seconds: f64,
     aspect: &str,
     frame: Option<&Path>,
+    last: Option<&Path>,
     dir: &Path,
     stem: &str,
 ) -> Result<PathBuf, String> {
@@ -541,15 +726,20 @@ fn seedance_clip(
             None => format!("{prompt} --ratio {aspect} --duration {duration}"),
         },
     })];
-    if let Some(frame) = frame {
+    // The picture it starts from and, with it, the one it ends on.
+    let ends = frame.map(|first| (first, "first_frame")).into_iter().chain(
+        last.filter(|_| frame.is_some())
+            .map(|last| (last, "last_frame")),
+    );
+    for (picture, role) in ends {
         let bytes =
-            std::fs::read(frame).map_err(|error| format!("{}: {error}", frame.display()))?;
-        let mime = match providers::sniffed_extension(frame) {
+            std::fs::read(picture).map_err(|error| format!("{}: {error}", picture.display()))?;
+        let mime = match providers::sniffed_extension(picture) {
             Some("jpg") => "image/jpeg",
             Some("webp") => "image/webp",
             _ => "image/png",
         };
-        content.push(json!({
+        let mut image = json!({
             "type": "image_url",
             "image_url": {
                 "url": format!(
@@ -557,7 +747,11 @@ fn seedance_clip(
                     base64::engine::general_purpose::STANDARD.encode(bytes)
                 )
             },
-        }));
+        });
+        if last.is_some() {
+            image["role"] = json!(role);
+        }
+        content.push(image);
     }
     let agent = agent();
     let auth = || format!("Bearer {}", key.trim());
@@ -687,6 +881,21 @@ mod tests {
         assert_eq!(openai_size("1:1"), "1024x1024");
         assert_eq!(five_or_ten(4.0), 5);
         assert_eq!(five_or_ten(9.0), 10);
+    }
+
+    /// An edit is sent as a form: every field and the picture, between
+    /// one boundary; and it is told to keep the picture as it is.
+    #[test]
+    fn an_edit_is_a_form_that_keeps_the_picture() {
+        let (boundary, body) = multipart(&[("model", "gpt-image-2")], ("image", "a.png", b"PNG"));
+        let body = String::from_utf8(body).unwrap();
+        assert!(body.starts_with(&format!("--{boundary}\r\n")));
+        assert!(body.contains("name=\"model\"\r\n\r\ngpt-image-2\r\n"));
+        assert!(body.contains("filename=\"a.png\""));
+        assert!(body.ends_with(&format!("PNG\r\n--{boundary}--\r\n")));
+        let told = edit_prompt(" add a propeller ");
+        assert!(told.starts_with("Keep this exact picture"));
+        assert!(told.ends_with("change only this: add a propeller"));
     }
 
     /// Only the picture models are offered, the default first: OpenAI's

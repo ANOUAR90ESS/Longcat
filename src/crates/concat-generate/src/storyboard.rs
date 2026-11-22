@@ -60,6 +60,12 @@ pub struct Storyboard {
     /// none for a video written without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub editorial: Option<crate::editorial::Editorial>,
+    /// Each shot follows on from the one before: one object built a part
+    /// at a time ("What are we building?"). Its pictures are made in
+    /// order, each by editing the one before where the picture maker can,
+    /// and each clip runs from the shot before's picture to its own.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub chained: bool,
 }
 
 /// A page the writer's research read.
@@ -629,6 +635,24 @@ fn names(prompt: &str, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A board is chained only when written so; one that is not says
+    /// nothing of it, so older boards read and write as they did.
+    #[test]
+    fn a_board_is_chained_only_when_written_so() {
+        let plain = Storyboard::default();
+        assert!(!serde_json::to_string(&plain).unwrap().contains("chained"));
+        let chained = Storyboard {
+            chained: true,
+            ..Storyboard::default()
+        };
+        let text = serde_json::to_string(&chained).unwrap();
+        assert!(text.contains("\"chained\":true"));
+        let read: Storyboard = serde_json::from_str(&text).unwrap();
+        assert!(read.chained);
+        let old: Storyboard = serde_json::from_str("{\"title\":\"x\"}").unwrap();
+        assert!(!old.chained);
+    }
 
     /// A recurring character a shot names is described in its prompt as
     /// they always look; one it does not name is not.

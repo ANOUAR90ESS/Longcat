@@ -212,15 +212,20 @@ pub enum VideoFormat {
     /// One concept taught from an everyday question, drawn as it is
     /// explained.
     Lesson,
+    /// "What are we building?": a machine built up from an everyday
+    /// thing, one problem and one part at a time, its name kept back
+    /// until the end - the topic is only the machine's name.
+    Build,
 }
 
 impl VideoFormat {
     /// In the sheet's order.
-    pub const ALL: [VideoFormat; 4] = [
+    pub const ALL: [VideoFormat; 5] = [
         VideoFormat::Custom,
         VideoFormat::Minute,
         VideoFormat::Story,
         VideoFormat::Lesson,
+        VideoFormat::Build,
     ];
 
     /// What the writer is told of the format; nothing for none.
@@ -278,6 +283,45 @@ impl VideoFormat {
                  remember go on a list card, said in a fresh line rather than counted out.\n\
                  - Give the video a guide: one character who asks the questions the viewer \
                  would, and is in the pictures that are not drawings."
+            }
+            VideoFormat::Build => {
+                "FORMAT - WHAT ARE WE BUILDING? The topic is the name of a machine or \
+                 object (a submarine, an electric razor, a lift). The video builds it in front \
+                 of the viewer from something silly, and never says what it is until the end.\n\
+                 - Read up on how it really works first: every part and every reason below \
+                 must be true of the real machine.\n\
+                 - Never name the machine, nor a word that gives it away, before the last \
+                 scene: not in the narration, not in a sticker, not in a picture's prompt. The \
+                 viewer keeps guessing; that is why they stay. The title teases what it does \
+                 without naming it ('How a sinking bottle crosses an ocean').\n\
+                 - The first scene opens on an everyday, slightly absurd object that does the \
+                 machine's most basic job badly - a tin can going up and down for an engine, \
+                 a bottle that sinks for a submarine - and asks, in the narration's language, \
+                 'What are we building?'. Its sticker is that question.\n\
+                 - Then twelve to eighteen scenes, each one step: the problem the object has \
+                 now, and the ONE part that fixes it, added to what is already there. Each \
+                 fix brings the next problem ('...but now it spins on itself'), so no scene \
+                 closes the story. Problems are concrete and visible: it floods, it gets too \
+                 hot, it shakes, it cannot steer.\n\
+                 - Speak to the viewer as the builder: 'you add...', 'so you put...'. One or \
+                 two short sentences a scene, at most twelve words each; never 'in this \
+                 video'. Name each part by its real name the moment it is added, and say in \
+                 a few words why it works.\n\
+                 - Each scene's sticker is two or three words: the problem, starting with \
+                 '⚠ ', in the scene where it appears; the part, starting with '✓ ', in the \
+                 scene that fixes it. Each scene has one keyword: the word that matters most.\n\
+                 - The last scene reveals it: the real machine, finished, in full colour, \
+                 and its name - 'Congratulations: you just built a submarine!' - then one \
+                 question to the viewer that invites a comment.\n\
+                 - Every shot is the same object in the same place: one clean studio, the \
+                 same plain background and floor, the same light, the camera at about the \
+                 same angle, the object in the middle. Each shot's prompt describes the whole \
+                 object as built so far - every part added before, then this scene's new \
+                 part - so the pictures follow one another; the object shown as a clean, \
+                 slightly transparent 3D model where its inside matters. Each shot is a clip \
+                 whose motion is the new part arriving and fitting into place, or the \
+                 problem happening (water rushing in, the frame spinning). The last shot is \
+                 the finished machine as it looks in real life."
             }
         }
     }
@@ -589,6 +633,7 @@ pub fn write(
     }
 
     let mut board = Storyboard {
+        chained: brief.format == VideoFormat::Build,
         title: text(&outline["title"]),
         language: brief.language.clone(),
         aspect: brief.aspect.clone(),
@@ -703,7 +748,9 @@ pub fn write(
     // The hook last, from the script as it came out: an opening written
     // first promises what the plan was, and this one what the video has.
     // A video of cards alone has no picture to open on, and none is made.
-    if brief.hook && !brief.cards_only {
+    // "What are we building?" opens on its everyday object and keeps the
+    // machine's name back: a hook written apart would give it away.
+    if brief.hook && !brief.cards_only && brief.format != VideoFormat::Build {
         progress(Writing::Hook);
         match ask(&hook_tool(), hook_prompt(&board, &brief_text)) {
             Ok(got) => match hook_scene(&got) {
@@ -3559,7 +3606,12 @@ mod tests {
     /// A format is in every call's brief, and none adds nothing.
     #[test]
     fn a_format_is_briefed_in_every_call() {
-        for format in [VideoFormat::Minute, VideoFormat::Story, VideoFormat::Lesson] {
+        for format in [
+            VideoFormat::Minute,
+            VideoFormat::Story,
+            VideoFormat::Lesson,
+            VideoFormat::Build,
+        ] {
             let brief = Brief {
                 format,
                 ..Brief::default()

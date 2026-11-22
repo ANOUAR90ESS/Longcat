@@ -293,6 +293,8 @@
   "generate.formatCustomHint": "Un format fixe le cadre, la durée et le style pour un type de vidéo, et donne sa structure à l'auteur. Vous pouvez encore tout changer ensuite.",
   "generate.formatLesson": "Leçon simple",
   "generate.formatLessonHint": "Trois minutes, horizontal. Un concept parti d'une question du quotidien, une seule analogie du début à la fin, dessiné à mesure qu'on l'explique, trois choses à retenir à la fin.",
+  "generate.formatBuild": "Qu’est-ce qu’on construit ?",
+  "generate.formatBuildHint": "Tapez seulement le nom d’une machine : un sous-marin, un rasoir électrique. Trois minutes, à la verticale : elle est construite à partir d’un objet du quotidien, un problème et une pièce à la fois, chaque plan un clip du même objet qui grandit, et son nom gardé jusqu’à la fin.",
   "generate.formatMinute": "Expliqué en une minute",
   "generate.formatMinuteHint": "Une minute, vertical, pour Shorts, Reels et TikTok. S'ouvre sur une situation ou une question, répond en quelques phrases courtes avec les deux mêmes personnages dans chaque image, et finit par une question au spectateur.",
   "generate.formatStory": "Récit documentaire",

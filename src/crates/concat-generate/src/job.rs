@@ -663,6 +663,8 @@ impl Job {
         // rest are seen to: a minute of waiting a shot, one after the
         // other, was most of a long video's making.
         let mut queue: Vec<Queued> = Vec::new();
+        // On a chained board, the last shot with a picture of its own.
+        let mut before: Option<String> = None;
         for (chapter, scene) in board
             .chapters
             .iter()
@@ -676,6 +678,11 @@ impl Job {
                     continue;
                 }
                 let stem = shot_stem(&scene.id, index);
+                let previous = if board.chained && shot.kind != ShotKind::Motion {
+                    before.replace(stem.clone())
+                } else {
+                    None
+                };
                 let again = stale.contains(&stem) && !matches!(shots, Shots::Folder);
                 if self.current(&stem).is_some() && !again {
                     continue;
@@ -761,6 +768,7 @@ impl Job {
                             seconds,
                             stem,
                             idea: idea_of(scene),
+                            previous,
                         });
                         continue;
                     }
@@ -1335,6 +1343,9 @@ struct Queued<'a> {
     /// What the scene is about, in its own words: what a card standing in
     /// for the shot says.
     idea: String,
+    /// On a chained board, the shot before it, whose picture it follows
+    /// on from.
+    previous: Option<String>,
 }
 
 /// What every shot of a batch shares.
@@ -1399,7 +1410,10 @@ impl Job {
         let halt = AtomicBool::new(false);
         let (tell, heard) = std::sync::mpsc::channel::<Said>();
         std::thread::scope(|scope| {
-            for _ in 0..AT_ONCE.min(queue.len()) {
+            // A chained board's shots each follow on from the one before:
+            // made one at a time, in order.
+            let workers = if batch.board.chained { 1 } else { AT_ONCE };
+            for _ in 0..workers.min(queue.len()) {
                 let tell = tell.clone();
                 let (next, halt, ready) = (&next, &halt, &ready);
                 scope.spawn(move || {
@@ -1409,7 +1423,7 @@ impl Job {
                             break;
                         };
                         let _ = tell.send(Said::Started(i));
-                        let order = Order::new(
+                        let mut order = Order::new(
                             batch.board,
                             queued.chapter,
                             queued.shot,
@@ -1417,6 +1431,10 @@ impl Job {
                             batch.dir,
                             &queued.stem,
                         );
+                        order.previous = queued
+                            .previous
+                            .as_deref()
+                            .and_then(|stem| self.keyframe(stem));
                         let mut inputs = ready.clone();
                         let outcome = self.replicate_shot(
                             batch.shots,
@@ -1518,6 +1536,9 @@ struct Order<'a> {
     /// Where the shot goes, and its file's name without the extension.
     dir: &'a Path,
     stem: &'a str,
+    /// On a chained board, the picture of the shot before: this shot's
+    /// picture is that one edited, and its clip runs from it.
+    previous: Option<PathBuf>,
 }
 
 impl<'a> Order<'a> {
@@ -1537,6 +1558,7 @@ impl<'a> Order<'a> {
             aspect: &board.aspect,
             dir,
             stem,
+            previous: None,
         }
     }
 }
@@ -1845,8 +1867,16 @@ impl Job {
             }
         }
         spend.take(prices.still)?;
-        let still = |prompt: &str| {
-            providers::retry(|| pictures.make(prompt, order.aspect, order.dir, order.stem))
+        let still = |prompt: &str| match &order.previous {
+            Some(previous) => edited(
+                pictures,
+                previous,
+                prompt,
+                order.aspect,
+                order.dir,
+                order.stem,
+            ),
+            None => providers::retry(|| pictures.make(prompt, order.aspect, order.dir, order.stem)),
         };
         let image = match still(&order.prompt) {
             // Refused by the model's safety filter: asked once more, gently,
@@ -1881,6 +1911,27 @@ impl Job {
     }
 }
 
+/// `previous` edited by `pictures` as `prompt` says, saved as
+/// `dir`/`stem`; a picture made anew from `prompt` where the picture maker
+/// does not edit, or the edit fails, so a chained board is never stopped
+/// by it.
+fn edited(
+    pictures: &crate::makers::Pictures,
+    previous: &Path,
+    prompt: &str,
+    aspect: &str,
+    dir: &Path,
+    stem: &str,
+) -> Result<PathBuf, String> {
+    match providers::retry(|| pictures.edit(previous, prompt, aspect, dir, stem)) {
+        Ok(made) => Ok(made),
+        Err(error) => {
+            log::warn!("{stem}: not edited from the shot before ({error}); made anew");
+            providers::retry(|| pictures.make(prompt, aspect, dir, stem))
+        }
+    }
+}
+
 /// One clip to make: what [`Job::clip`] is handed.
 struct Clip<'a> {
     pictures: &'a crate::makers::Pictures,
@@ -1900,11 +1951,39 @@ impl Job {
             return Ok(frame);
         }
         spend.take(prices.still)?;
-        providers::retry(|| {
-            clip.pictures
-                .make(&order.prompt, order.aspect, &frames, order.stem)
-        })
+        match &order.previous {
+            Some(previous) => edited(
+                clip.pictures,
+                previous,
+                &order.prompt,
+                order.aspect,
+                &frames,
+                order.stem,
+            ),
+            None => providers::retry(|| {
+                clip.pictures
+                    .make(&order.prompt, order.aspect, &frames, order.stem)
+            }),
+        }
         .inspect_err(|_| spend.refund(prices.still))
+    }
+
+    /// The picture shot `stem` shows, for the next shot of a chained board
+    /// to follow on from: the still a clip started from, else the still
+    /// itself; none for a clip without one, or a shot not made.
+    fn keyframe(&self, stem: &str) -> Option<PathBuf> {
+        providers::existing(&self.frames_dir(), stem, &SHOT_EXTENSIONS)
+            .or_else(|| self.current(stem))
+            .filter(|path| {
+                path.extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| {
+                        matches!(
+                            extension.to_ascii_lowercase().as_str(),
+                            "png" | "jpg" | "jpeg" | "webp"
+                        )
+                    })
+            })
     }
 
     /// Makes one clip. A model that starts from a picture is sent a still
@@ -1928,12 +2007,19 @@ impl Job {
             direct => {
                 let frame = self.frame(clip, prices, spend)?;
                 spend.take(prices.clip)?;
+                // On a chained board the clip runs from the shot before's
+                // picture to this one's: the new part arriving.
+                let (first, last) = match &order.previous {
+                    Some(previous) => (previous.as_path(), Some(frame.as_path())),
+                    None => (frame.as_path(), None),
+                };
                 return providers::retry(|| {
                     direct.make_direct(
                         &order.video_prompt,
                         order.seconds,
                         order.aspect,
-                        Some(&frame),
+                        Some(first),
+                        last,
                         order.dir,
                         order.stem,
                     )

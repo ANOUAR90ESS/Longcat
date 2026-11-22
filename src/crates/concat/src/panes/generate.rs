@@ -2913,10 +2913,14 @@ impl GeneratePane {
         let language = LANGUAGES[prefs.language.min(LANGUAGES.len() - 1)];
         let made: Vec<String> = prefs.made_before().to_vec();
         let per_week = calendar::PER_WEEK[per_week_row(&prefs)];
+        // A channel that makes "What are we building?" plans machines to
+        // build, by their names: the topic that format takes.
+        let machines =
+            VideoFormat::ALL[prefs.format.min(VideoFormat::ALL.len() - 1)] == VideoFormat::Build;
         self.begin(t("generate.planBusy"));
         self.phase = 0;
         spawn_in_project(
-            move || calendar::plan(&channel, language, &made, per_week, &key, &model),
+            move || calendar::plan(&channel, language, &made, per_week, machines, &key, &model),
             |studio, _, _, result| {
                 studio.handle(Msg::Generate(GenerateMsg::Planned(Box::new(result))))
             },
@@ -4430,6 +4434,18 @@ fn format_look(format: VideoFormat) -> Option<FormatLook> {
             pictures: 2,
             caption_look: 0,
             clips: 0,
+        }),
+        // What are we building?: three minutes, upright, taught, every
+        // shot a clip of the same object growing, captions a few words at
+        // a time.
+        VideoFormat::Build => Some(FormatLook {
+            minutes: 1,
+            aspect: 1,
+            content_style: 1,
+            level: 1,
+            pictures: 0,
+            caption_look: 1,
+            clips: CLIP_SHARES.len() - 1,
         }),
     }
 }
