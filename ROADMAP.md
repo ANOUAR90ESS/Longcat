@@ -751,8 +751,13 @@ One release when all four stages are done.
   sticker. A sticker starting "⚠" is plated red, one starting "✓" green
   (`plate_of`), others the channel's colour. Each caption's word lands in
   red on a chained board unless the channel has a colour of its own.
-- D. **Joined up**: the channel manager's niche "how things work"
-  planning machines to build; checks; one release.
+- D. **Joined up** - done. A channel whose format is "What are we
+  building?" has its month planned as machines to build: each entry's
+  title is a machine's name alone (a submarine, an electric razor), its
+  angle the surprise in how it works, no two in a row from one field
+  (`calendar::prompt` with `machines`). "Make this" and "Make the whole
+  plan" write each with the format, so a name becomes its video. One
+  release for the four stages.
 
 ## Two fixes from the owner's log (21 Nov)
 
