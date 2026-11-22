@@ -745,9 +745,12 @@ One release when all four stages are done.
   frames; asked again from the first alone where it is not taken), so the
   machine grows in one take. No hook is written apart for it: it would
   give the name away.
-- C. **On screen**: "What are we building?" in the corner until the
-  reveal; the ⚠ and ✓ tags on the object; one word of each caption in the
-  accent colour.
+- C. **On screen** - done. A chained board's first sticker - its
+  question - is kept at the top of the frame from the first scene until
+  the last, which answers it (`Kind::Question`), instead of shown as a
+  sticker. A sticker starting "⚠" is plated red, one starting "✓" green
+  (`plate_of`), others the channel's colour. Each caption's word lands in
+  red on a chained board unless the channel has a colour of its own.
 - D. **Joined up**: the channel manager's niche "how things work"
   planning machines to build; checks; one release.
 

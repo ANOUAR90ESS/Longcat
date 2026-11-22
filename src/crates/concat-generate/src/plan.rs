@@ -155,6 +155,9 @@ pub enum Kind {
     Bumper,
     /// The channel's logo, in a corner over the scenes.
     Logo,
+    /// A question kept at the top of the frame until the last scene
+    /// answers it: "What are we building?" on a chained board.
+    Question,
 }
 
 /// One clip to lay down.
@@ -423,7 +426,11 @@ pub fn plan(
         t = intro.1;
     }
     let mut opened = t;
+    // When each scene starts: a chained board's question stays up until
+    // the last one.
+    let mut starts: Vec<f64> = Vec::new();
     for (n, scene) in board.scenes().enumerate() {
+        starts.push(t);
         let made = files.get(&scene.id).cloned().unwrap_or_default();
         if made.shots.is_empty() {
             return Err(format!("scene {} has no shots", scene.id));
@@ -581,6 +588,9 @@ pub fn plan(
             .as_deref()
             .map(str::trim)
             .filter(|text| !text.is_empty())
+            // A chained board's first sticker is its question, kept at
+            // the top of the frame instead.
+            .filter(|_| !(board.chained && n == 0))
         {
             let at = STICKER_LEAD.min(length / 4.0);
             out.push(Placement {
@@ -642,6 +652,31 @@ pub fn plan(
 
     // A sound with no room left to ring is left out.
     out.retain(|p| p.kind != Kind::Sound || p.length > 0.05);
+    // "What are we building?": the first scene's sticker, kept at the top
+    // of the frame from the first scene until the last, which answers it.
+    if board.chained
+        && let (Some(first), Some(last)) = (starts.first(), starts.last())
+        && last > first
+        && let Some(question) = board
+            .scenes()
+            .next()
+            .and_then(|scene| scene.sticker.as_deref())
+            .map(str::trim)
+            .filter(|question| !question.is_empty())
+    {
+        out.push(Placement {
+            kind: Kind::Question,
+            start: *first,
+            length: last - first,
+            file: None,
+            source: None,
+            from: 0.0,
+            text: Some(question.to_owned()),
+            graphic: None,
+            low: false,
+            emphasis: String::new(),
+        });
+    }
     // The logo over the scenes, not over the channel's own cards.
     if let Some(logo) = options.logo.as_ref().filter(|_| t > opened) {
         out.push(Placement {
@@ -972,6 +1007,7 @@ pub fn cut(
             | Kind::Card
             | Kind::Graphic
             | Kind::Sticker
+            | Kind::Question
             | Kind::Sound
             | Kind::Logo => lanes[3].clone(),
         }
@@ -1007,6 +1043,7 @@ pub fn cut(
         Kind::Graphic,
         Kind::Card,
         Kind::Sticker,
+        Kind::Question,
         Kind::Caption,
         Kind::Logo,
     ];
@@ -1286,7 +1323,7 @@ pub fn cut(
                         start: p.start,
                         style: Some(sticker_style(
                             p.text.clone().unwrap_or_default(),
-                            options.accent.as_deref(),
+                            plate_of(p.text.as_deref().unwrap_or_default(), options),
                         )),
                         duration: Some(p.length),
                         offset_y: Some(-0.2),
@@ -1300,6 +1337,21 @@ pub fn cut(
                         );
                         pop(editor, &sticker, p.length);
                     }
+                }
+                // At the top of the frame, small and steady, until the
+                // last scene answers it.
+                Kind::Question => {
+                    if figures.is_none() {
+                        figures = editor.apply(Command::AddTrack { bottom: false });
+                    }
+                    editor.apply(Command::AddTextClip {
+                        track_id: figures.clone(),
+                        above: true,
+                        start: p.start,
+                        style: Some(question_style(p.text.clone().unwrap_or_default())),
+                        duration: Some(p.length),
+                        offset_y: Some(-0.4),
+                    });
                 }
                 Kind::Caption => {
                     if captions.is_none() {
@@ -1320,7 +1372,12 @@ pub fn cut(
                     if !p.emphasis.is_empty() {
                         style.color = "#FFFFFF".to_owned();
                         style.emphasis = p.emphasis.clone();
-                        style.emphasis_color = accent_of(options).to_owned();
+                        // A chained board's word lands in red unless the
+                        // channel has a colour of its own.
+                        style.emphasis_color = match options.accent.as_deref() {
+                            None if board.chained => PROBLEM.to_owned(),
+                            _ => accent_of(options).to_owned(),
+                        };
                     }
                     let card = editor.apply(Command::AddTextClip {
                         track_id: captions.clone(),
@@ -1535,6 +1592,39 @@ fn rgb_of(colour: &str) -> Option<[u8; 3]> {
     }
     let channel = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).ok();
     Some([channel(0)?, channel(2)?, channel(4)?])
+}
+
+/// The red a problem's sticker is plated in, and a chained board's
+/// caption word; the green of a part that fixes it.
+const PROBLEM: &str = "#E63946";
+const FIXED: &str = "#2A9D5C";
+
+/// A sticker's plate: red for a problem ("⚠ ..."), green for the part that
+/// fixes it ("✓ ..."), otherwise the channel's colour.
+fn plate_of<'a>(text: &str, options: &'a Options) -> Option<&'a str> {
+    match text.trim_start().chars().next() {
+        Some('⚠') => Some(PROBLEM),
+        Some('✓' | '✔') => Some(FIXED),
+        _ => options.accent.as_deref(),
+    }
+}
+
+/// The question at the top of a chained board's frame: white words on a
+/// dark plate, small enough to leave the picture to the object.
+fn question_style(content: String) -> TextStyle {
+    TextStyle {
+        content,
+        font_size: 0.04,
+        font_weight: 800.0,
+        color: "#FFFFFF".to_owned(),
+        shadow: true,
+        background: "#111111".to_owned(),
+        background_radius: 0.014,
+        background_padding_x: 0.022,
+        background_padding_y: 0.012,
+        max_width: 0.8,
+        ..TextStyle::default()
+    }
 }
 
 /// A sticker: a few heavy words on a plate - the channel's colour, or
@@ -2153,6 +2243,42 @@ mod tests {
     /// A caption that holds one of its scene's keywords shows it in colour,
     /// whatever its case or punctuation; a sticker is laid tilted on the
     /// cards' lane, a moment into its scene.
+    /// A chained board keeps its first sticker - its question - at the
+    /// top of the frame from the first scene until the last, not as a
+    /// sticker; a problem's sticker is plated red and a part's green.
+    #[test]
+    fn a_chained_board_keeps_its_question_until_the_reveal() {
+        let mut board = board();
+        board.chained = true;
+        board.chapters[0].scenes[0].sticker = Some("What are we building?".into());
+        board.chapters[0].scenes[1].sticker = Some("✓ Propeller".into());
+        let placements = plan(&board, &files(), &Options::default(), None).unwrap();
+        let questions = of(&placements, Kind::Question);
+        assert_eq!(questions.len(), 1);
+        assert_eq!(questions[0].text.as_deref(), Some("What are we building?"));
+        assert!(questions[0].start.abs() < 1e-9);
+        let last = of(&placements, Kind::Voice)
+            .last()
+            .map_or(0.0, |voice| voice.start);
+        assert!(questions[0].start + questions[0].length > 0.0);
+        assert!(questions[0].start + questions[0].length <= last + 6.0);
+        let stickers = of(&placements, Kind::Sticker);
+        assert_eq!(stickers.len(), 1);
+        assert_eq!(stickers[0].text.as_deref(), Some("✓ Propeller"));
+        // Not chained: no question, and the first sticker is a sticker.
+        board.chained = false;
+        let plain = plan(&board, &files(), &Options::default(), None).unwrap();
+        assert!(of(&plain, Kind::Question).is_empty());
+        assert_eq!(of(&plain, Kind::Sticker).len(), 2);
+        let options = Options {
+            accent: Some("#123456".into()),
+            ..Options::default()
+        };
+        assert_eq!(plate_of("⚠ It floods", &options), Some(PROBLEM));
+        assert_eq!(plate_of(" ✓ Ballast tank", &options), Some(FIXED));
+        assert_eq!(plate_of("Wow", &options), Some("#123456"));
+    }
+
     #[test]
     fn keywords_colour_their_captions_and_a_sticker_is_tilted() {
         assert_eq!(
