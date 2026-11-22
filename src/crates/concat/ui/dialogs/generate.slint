@@ -554,6 +554,7 @@ export component GenerateDialog inherits Modal {
                                     I18n.t("generate.formatMinute"),
                                     I18n.t("generate.formatStory"),
                                     I18n.t("generate.formatLesson"),
+                                    I18n.t("generate.formatBuild"),
                                 ];
                                 current: root.data.format;
                                 changed(index) => { root.choice-changed(19, index); }
@@ -564,6 +565,7 @@ export component GenerateDialog inherits Modal {
                             text: root.data.format == 1 ? I18n.t("generate.formatMinuteHint")
                                 : root.data.format == 2 ? I18n.t("generate.formatStoryHint")
                                 : root.data.format == 3 ? I18n.t("generate.formatLessonHint")
+                                : root.data.format == 4 ? I18n.t("generate.formatBuildHint")
                                 : I18n.t("generate.formatCustomHint");
                             color: Theme.fg-dim;
                             font-size: Theme.fs-sm;

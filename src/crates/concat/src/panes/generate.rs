@@ -4431,6 +4431,18 @@ fn format_look(format: VideoFormat) -> Option<FormatLook> {
             caption_look: 0,
             clips: 0,
         }),
+        // What are we building?: three minutes, upright, taught, every
+        // shot a clip of the same object growing, captions a few words at
+        // a time.
+        VideoFormat::Build => Some(FormatLook {
+            minutes: 1,
+            aspect: 1,
+            content_style: 1,
+            level: 1,
+            pictures: 0,
+            caption_look: 1,
+            clips: CLIP_SHARES.len() - 1,
+        }),
     }
 }
 

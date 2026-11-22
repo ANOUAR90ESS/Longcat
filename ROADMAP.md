@@ -716,6 +716,35 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## "What are we building?" (owner, 22 Nov)
+
+From four Reels the owner sent ("شكون قاليك": an engine from a tin can, a
+washing machine from a bidon, a drone from four fans, a plane from a
+bus): the machine is built in front of the viewer from something silly,
+one problem and one part at a time, its name kept back until the end -
+"What are we building?" stays in the corner, and the viewer stays to
+find out. The owner types only the machine's name; English or Spanish.
+One release when all four stages are done.
+
+- A. **The writing** - done. `VideoFormat::Build` ("What are we
+  building?" in the sheet's formats): the writer reads up on the real
+  machine, opens on an everyday object doing its job badly, then twelve
+  to eighteen scenes each a problem and the one part that fixes it ("you
+  add..."), stickers "⚠ problem" and "✓ part", the name never said until
+  the reveal, a question to end on. Every shot is the same object in the
+  same studio, its prompt the whole object as built so far, and a clip of
+  the new part arriving. The format sets three minutes, upright, every
+  shot a clip, captions a few words at a time.
+- B. **Scenes that follow on**: video, not stills - each clip made from
+  the object as it was (its first frame) to the object with the new part
+  (its last), so the machine grows in one take; keyframes made by editing
+  the one before, where the picture maker can.
+- C. **On screen**: "What are we building?" in the corner until the
+  reveal; the ⚠ and ✓ tags on the object; one word of each caption in the
+  accent colour.
+- D. **Joined up**: the channel manager's niche "how things work"
+  planning machines to build; checks; one release.
+
 ## Two fixes from the owner's log (21 Nov)
 
 - The picture check's redrawing said nothing: a still that failed was
