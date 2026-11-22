@@ -156,7 +156,49 @@ impl GeneratePrefs {
         let Some(template) = self.templates.get(index).cloned() else {
             return false;
         };
-        let mut prefs = *template.prefs;
+        self.apply_choices(*template.prefs);
+        true
+    }
+
+    /// The sheet's choices a project keeps in its own folder
+    /// ([`PROJECT_SHEET`]): a series without a name, no key in it.
+    pub fn project_choices(&self) -> GeneratePrefs {
+        *self.as_template("").prefs
+    }
+
+    /// Brings back a project's own choices, under the keys, the series
+    /// and the channels' memory these already hold.
+    pub fn apply_project(&mut self, choices: GeneratePrefs) {
+        self.apply_choices(choices);
+    }
+
+    /// A project that kept no choices starts on no channel: no name, no
+    /// look, no format of its own, nothing of the project before. How the
+    /// person works - the language, the voice, who makes what - stays.
+    pub fn start_fresh(&mut self) {
+        self.channel_name.clear();
+        self.channel_audience.clear();
+        self.channel_voice.clear();
+        self.channel_opening.clear();
+        self.channel_closing.clear();
+        self.channel_example.clear();
+        self.channel_topics.clear();
+        self.channel_rules.clear();
+        self.channel_tagline.clear();
+        self.channel_about.clear();
+        self.thumbnail_style.clear();
+        self.brand_color.clear();
+        self.brand_logo.clear();
+        self.brand_second.clear();
+        self.brand_banner.clear();
+        self.brand_bumpers = false;
+        self.format = 0;
+        self.structure.clear();
+    }
+
+    /// `prefs` in place of these choices, under the keys, the series and
+    /// what each channel has made, which are the person's.
+    fn apply_choices(&mut self, mut prefs: GeneratePrefs) {
         // Every key stays the one in use, and so do the series and what
         // each channel has made: none of them is a series' to change.
         prefs.anthropic_key = std::mem::take(&mut self.anthropic_key);
@@ -180,7 +222,6 @@ impl GeneratePrefs {
         prefs.templates = std::mem::take(&mut self.templates);
         prefs.memory = std::mem::take(&mut self.memory);
         *self = prefs;
-        true
     }
 
     /// Notes that the channel in use made a video called `title`, so the
@@ -276,6 +317,9 @@ impl GeneratePrefs {
 
 /// The name the ready channel goes by.
 pub const LA_LOGICA: &str = "la lógica";
+
+/// The file in a project's folder its own Long video choices are kept in.
+pub const PROJECT_SHEET: &str = "long-video.json";
 
 /// How many videos a channel's memory keeps: enough not to repeat a
 /// season, few enough to tell the writer in every call.
@@ -714,6 +758,36 @@ mod tests {
         assert!(prefs.apply_template(0));
         assert_eq!(prefs.youtube_token, "1//refresh");
         assert_eq!(prefs.youtube_channel, "Mine");
+    }
+
+    /// A project keeps its channel and format without a key; another
+    /// project brings back its own, and a project that kept none starts on
+    /// no channel, the keys and the voice as they were.
+    #[test]
+    fn each_project_keeps_its_own_choices() {
+        let mut prefs = GeneratePrefs {
+            anthropic_key: "sk-ant".into(),
+            elevenlabs_voice: "Voice".into(),
+            channel_name: "la lógica".into(),
+            channel_topics: "politics".into(),
+            brand_color: "#C9A227".into(),
+            format: 4,
+            ..GeneratePrefs::default()
+        };
+        let kept = prefs.project_choices();
+        assert!(kept.anthropic_key.is_empty());
+        assert_eq!(kept.channel_name, "la lógica");
+        prefs.start_fresh();
+        assert!(prefs.channel_name.is_empty());
+        assert!(prefs.channel_topics.is_empty());
+        assert!(prefs.brand_color.is_empty());
+        assert_eq!(prefs.format, 0);
+        assert_eq!(prefs.anthropic_key, "sk-ant");
+        assert_eq!(prefs.elevenlabs_voice, "Voice");
+        prefs.apply_project(kept);
+        assert_eq!(prefs.channel_name, "la lógica");
+        assert_eq!(prefs.format, 4);
+        assert_eq!(prefs.anthropic_key, "sk-ant");
     }
 
     const NAMES: [&str; 3] = ["Lime", "Sky", "Violet"];

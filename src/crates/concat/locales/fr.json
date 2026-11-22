@@ -406,6 +406,7 @@
   "generate.makeThis": "Faire celle-ci",
   "generate.makePlan": "Faire tout le plan",
   "generate.makePlanHint": "Chaque vidéo pas encore faite, l’une après l’autre dans l’ordre. Chacune est relue au montage et n’est pas exportée si quelque chose ne va pas ; Annuler arrête celle en cours, et Créer la reprend là où elle s’est arrêtée.",
+  "generate.planStale": "Ce plan a été fait pour un autre type de format. Planifiez à nouveau les 30 jours pour celui-ci avant d'en faire une vidéo.",
   "generate.planMaking": "Création de {0} vidéos du plan, environ {1} au total…",
   "generate.planAllMade": "Toutes les vidéos du plan sont faites.",
   "generate.youtubeHint": "Dans votre projet Google Cloud : activez YouTube Data API v3, créez un client OAuth de type Desktop app et indiquez ici son ID et son secret. La connexion ouvre la page de Google dans le navigateur ; votre mot de passe n’atteint jamais l’app. Un projet non audité par Google met les vidéos en privé : rendez-les publiques dans YouTube Studio.",

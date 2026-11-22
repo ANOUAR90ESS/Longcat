@@ -7153,6 +7153,46 @@ impl Studio {
 
     /// Opens a project as the session and leaves the launch screen, or
     /// says why it could not.
+    /// Saves the Long video sheet's choices: in the app's settings, and
+    /// in the open project's folder, so the project finds them again.
+    pub fn save_generate(&mut self) {
+        self.prefs.save(&self.host.dirs);
+        self.keep_project_sheet();
+    }
+
+    /// Keeps the sheet's choices in the open project's folder
+    /// ([`crate::prefs::PROJECT_SHEET`]), never a key with them.
+    fn keep_project_sheet(&self) {
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+        let path = std::path::Path::new(session.path()).join(crate::prefs::PROJECT_SHEET);
+        let written = serde_json::to_vec_pretty(&self.prefs.generate.project_choices())
+            .map_err(|error| error.to_string())
+            .and_then(|bytes| std::fs::write(&path, bytes).map_err(|error| error.to_string()));
+        if let Err(error) = written {
+            log::warn!("generate: keeping the project's choices: {error}");
+        }
+    }
+
+    /// The project just opened brings back the sheet's choices it kept;
+    /// one that kept none - a new project - starts on no channel, so
+    /// nothing of the project before shows in it.
+    fn open_project_sheet(&mut self) {
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+        let path = std::path::Path::new(session.path()).join(crate::prefs::PROJECT_SHEET);
+        let kept = std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+        match kept {
+            Some(choices) => self.prefs.generate.apply_project(choices),
+            None => self.prefs.generate.start_fresh(),
+        }
+        self.prefs.save(&self.host.dirs);
+    }
+
     pub fn open_project(&mut self, info: ProjectInfo) -> Result<(), String> {
         log::info!("project: opening {}", info.path);
         if self
@@ -7195,6 +7235,7 @@ impl Studio {
                     log::info!("{swept} stale proxies swept from {}", project_dir.display());
                 }
                 self.session = Some(session);
+                self.open_project_sheet();
                 crate::host::next_project_epoch();
                 self.forget_art();
                 self.art_failed.clear();
@@ -7334,6 +7375,7 @@ impl Studio {
         self.cancel_merge();
         self.cutout_jobs.clear();
         self.region_job = None;
+        self.keep_project_sheet();
         if let Some(session) = self.session.as_mut() {
             let (path, document) = session.prepare_save(None);
             if let Err(error) = projects::save(&path, &document) {
