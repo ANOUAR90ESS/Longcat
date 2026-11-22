@@ -333,6 +333,8 @@ mod publisher {
             play: Box::new(move || hand(&to_play, true)),
             share: Box::new(move || hand(&to_share, false)),
         });
+        let to_browse = app.clone();
+        concat::install_link_opener(Box::new(move |url| open_link(&to_browse, url)));
         let to_download = app.clone();
         concat::install_file_publisher(Box::new(move |path| {
             publish_with(&to_download, path, jni_str!("publishDownload"))
@@ -365,6 +367,26 @@ mod publisher {
             Ok(())
         } else {
             Err("nothing on this phone took the video".to_owned())
+        }
+    }
+
+    /// `ConcatFiles.openLink`: a web page in the phone's browser.
+    fn open_link(app: &AndroidApp, url: &str) -> Result<(), String> {
+        let opened = super::java::with_class(app, |env, activity, class| {
+            let url = env.new_string(url)?;
+            env.call_static_method(
+                class,
+                jni_str!("openLink"),
+                jni_sig!("(Landroid/app/Activity;Ljava/lang/String;)Z"),
+                &[activity.into(), (&url).into()],
+            )?
+            .z()
+        })
+        .map_err(|error| format!("could not reach the phone: {error}"))?;
+        if opened {
+            Ok(())
+        } else {
+            Err("nothing on this phone opens a web page".to_owned())
         }
     }
 

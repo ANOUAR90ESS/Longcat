@@ -716,6 +716,71 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## Two fixes from the owner's log (21 Nov)
+
+- The picture check's redrawing said nothing: a still that failed was
+  drawn again for a minute under "Checking picture 17 of 17", and looked
+  stuck. It now says "Drawing again picture n of m" (`Step::Redrawing`).
+- Every message is written to the log, and the picture models' answer
+  carried the OpenAI key itself: the owner's log showed it. The message
+  carries a fingerprint of the key now, and a YouTube sign-in's answer is
+  logged as connected or not, never with its token.
+
+## Channel manager (owner, 21 Nov)
+
+A channel built from nothing: a niche, its identity, a plan of videos,
+the videos made, then published and followed. The owner's rule for it:
+no release until every stage is done - the stages go into one pull
+request, checked by CI each time, merged and released once. No spending
+limit stops a run halfway (a limit reached mid-video lost the work); the
+cost is shown before, and the person decides.
+
+1. **The niche** - done. "Find a niche for a new channel" in the Long
+   video sheet: what the person cares about, in the narration's language;
+   six niches from the writer (`concat_generate::niche`), each with its
+   demand, crowd, pay and how well it suits faceless video out of ten -
+   the writer's judgment, said to be - the channel it would be, and its
+   first five videos. "Use this niche" saves it as a channel of its own,
+   picked, its first videos the ideas list.
+2. **The identity** - done. "Design the channel's look" in the sheet's
+   Channel section (`concat_generate::identity`): the writer designs two
+   colours, a tagline, the page's description and the style every
+   thumbnail keeps to, from the channel as described; its logo (square,
+   for YouTube's circle) and banner (wide, its subject in the middle) are
+   drawn by the picture maker chosen, into a folder of the channel's own
+   under the app's data. The colour becomes the videos' accent, the logo
+   their corner mark, and the thumbnail style is added to every
+   thumbnail's prompt; all of it is kept with the channel.
+3. **A plan of 30 days** - done. In the Channel section: how many long
+   videos a week (1, 2, 3 or 5), the whole plan's cost at the sheet's
+   choices said before anything is made, and "Plan the next 30 days"
+   (`concat_generate::calendar`): the writer plans that many long videos
+   in order, spread over the month from day 1, none made before (the
+   channel's memory), each with why a viewer clicks. Each long video gives
+   its four Shorts from the results, so the plan is of long videos only.
+   Kept in the channel's folder; "Make this" makes a video the idea, and
+   a video of the plan written is marked made.
+4. **Making it** - done. "Make the whole plan" queues every video of the
+   plan not made yet and makes them one after another, as Make every
+   idea makes a batch, saying first how many and what they cost. Each is
+   looked over as it is cut and held back from export when something is
+   wrong; each is marked made in the plan as its script is written;
+   Cancel stops the one under way and Create carries it on.
+5. **Publishing** - done. A YouTube section in the sheet
+   (`concat_generate::youtube`): the person's own OAuth client ("Desktop
+   app") by its id and secret; "Connect YouTube" opens Google's page in
+   the browser (`platform::open_web`; on Android `ConcatFiles.openLink`)
+   and waits on a loopback port of the device for the code, traded with
+   a PKCE verifier for a refresh token kept on the device like every key
+   and never in a series. "Upload the last export" puts it up through the
+   resumable upload - as a Short when its file is one of the video's
+   Shorts, else as the long video with its title, description and tags -
+   private, unlisted or public (an unaudited project's are private
+   whatever is asked); "Read the numbers" lists views, likes and comments
+   of what was put up from here (kept per channel).
+   - Later: scheduling by the plan's days, the thumbnail set through the
+     API (a verified channel's), and the numbers steering the next plan.
+
 ## Results: the video and its four Shorts, each a project (owner, 21 Nov)
 
 Done. Making a Short, or the title and description, took the long video

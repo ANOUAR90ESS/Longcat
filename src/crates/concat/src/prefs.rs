@@ -126,6 +126,10 @@ impl GeneratePrefs {
         prefs.kling_access_key.clear();
         prefs.kling_secret_key.clear();
         prefs.seedance_key.clear();
+        prefs.youtube_client_id.clear();
+        prefs.youtube_client_secret.clear();
+        prefs.youtube_token.clear();
+        prefs.youtube_channel.clear();
         prefs.templates.clear();
         prefs.memory.clear();
         Template {
@@ -163,6 +167,13 @@ impl GeneratePrefs {
         prefs.kling_access_key = std::mem::take(&mut self.kling_access_key);
         prefs.kling_secret_key = std::mem::take(&mut self.kling_secret_key);
         prefs.seedance_key = std::mem::take(&mut self.seedance_key);
+        // So is the YouTube channel signed in to, whichever series is
+        // brought back.
+        prefs.youtube_client_id = std::mem::take(&mut self.youtube_client_id);
+        prefs.youtube_client_secret = std::mem::take(&mut self.youtube_client_secret);
+        prefs.youtube_token = std::mem::take(&mut self.youtube_token);
+        prefs.youtube_channel = std::mem::take(&mut self.youtube_channel);
+        prefs.youtube_privacy = self.youtube_privacy;
         // Who writes goes with the keys: it is the person's, not a series'.
         prefs.writer = self.writer;
         prefs.writer_model = std::mem::take(&mut self.writer_model);
@@ -319,6 +330,18 @@ pub struct GeneratePrefs {
     pub kling_model: String,
     /// Seedance on BytePlus ModelArk, when it makes the clips.
     pub seedance_key: String,
+    /// The person's own Google OAuth client ("Desktop app"), for YouTube:
+    /// its id.
+    pub youtube_client_id: String,
+    /// That client's secret.
+    pub youtube_client_secret: String,
+    /// The refresh token YouTube's sign-in gave: kept on the device, like
+    /// every key, never in a series.
+    pub youtube_token: String,
+    /// The channel signed in to, by its title.
+    pub youtube_channel: String,
+    /// Who sees a video put up: 0 private, 1 unlisted, 2 public.
+    pub youtube_privacy: usize,
     /// The Seedance model; empty for the default.
     pub seedance_model: String,
     /// Export the finished cut without being asked; None is yes.
@@ -349,6 +372,16 @@ pub struct GeneratePrefs {
     pub brand_logo: String,
     /// The channel's opening and closing drawn onto every video.
     pub brand_bumpers: bool,
+    /// The channel's second colour, `#rrggbb`; empty for none.
+    pub brand_second: String,
+    /// The channel's banner, a picture's path; empty for none.
+    pub brand_banner: String,
+    /// A line under the channel's name.
+    pub channel_tagline: String,
+    /// The channel page's description.
+    pub channel_about: String,
+    /// What every thumbnail keeps to, added to its picture's prompt.
+    pub thumbnail_style: String,
     /// The series saved: each a name and the sheet's choices as they
     /// were, to bring back with one pick.
     pub templates: Vec<Template>,
@@ -425,6 +458,9 @@ pub struct GeneratePrefs {
     /// The channel's editorial rules, as typed: what every script keeps
     /// to.
     pub channel_rules: String,
+    /// How many long videos a week the channel's plan holds: a row of
+    /// `calendar::PER_WEEK`; three a week unless chosen.
+    pub plan_per_week: Option<usize>,
     /// How many Shorts are cut from a video, one to five; three unless
     /// chosen.
     pub shorts_count: Option<usize>,
@@ -659,6 +695,25 @@ mod tests {
         assert_eq!(prefs.anthropic_key, "sk-newer");
         assert_eq!(prefs.templates.len(), 1);
         assert!(!prefs.apply_template(3));
+    }
+
+    /// The YouTube channel signed in to is never saved with a series, and
+    /// bringing one back keeps it.
+    #[test]
+    fn a_series_never_carries_the_youtube_sign_in() {
+        let mut prefs = GeneratePrefs {
+            youtube_client_secret: "secret".into(),
+            youtube_token: "1//refresh".into(),
+            youtube_channel: "Mine".into(),
+            ..GeneratePrefs::default()
+        };
+        let saved = prefs.as_template("A");
+        assert!(saved.prefs.youtube_token.is_empty());
+        assert!(saved.prefs.youtube_client_secret.is_empty());
+        prefs.keep_template(saved);
+        assert!(prefs.apply_template(0));
+        assert_eq!(prefs.youtube_token, "1//refresh");
+        assert_eq!(prefs.youtube_channel, "Mine");
     }
 
     const NAMES: [&str; 3] = ["Lime", "Sky", "Violet"];

@@ -29,15 +29,18 @@
 //! runs steps 1 and 2 on a worker and step 4 on the window's session.
 
 pub mod budget;
+pub mod calendar;
 pub mod chatgpt;
 pub mod checklist;
 pub mod cost;
 pub mod director;
 pub mod editorial;
 pub mod explainer;
+pub mod identity;
 pub mod job;
 pub mod makers;
 pub mod motion;
+pub mod niche;
 pub mod plan;
 pub mod providers;
 pub mod review;
@@ -47,3 +50,4 @@ pub mod srt;
 pub mod storyboard;
 pub mod visual;
 pub mod writer;
+pub mod youtube;

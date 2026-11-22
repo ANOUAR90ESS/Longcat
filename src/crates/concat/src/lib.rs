@@ -47,9 +47,9 @@ mod platform;
 /// `platform::publish_export`.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub use platform::{
-    ExportPublisher, FilePicker, FilePublisher, KeepAlive, LogSharer, VideoActions,
+    ExportPublisher, FilePicker, FilePublisher, KeepAlive, LinkOpener, LogSharer, VideoActions,
     install_export_publisher, install_file_picker, install_file_publisher, install_keep_alive,
-    install_log_sharer, install_phone_encoders, install_video_actions,
+    install_link_opener, install_log_sharer, install_phone_encoders, install_video_actions,
 };
 mod panes;
 mod prefs;
@@ -1789,6 +1789,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
     app.on_generate_open_video(on_window!(|state| {
         state.handle(Msg::Generate(GenerateMsg::OpenVideo));
+    }));
+    app.on_generate_choose_niche(on_window!(|state, index: i32| {
+        state.handle(Msg::Generate(GenerateMsg::ChooseNiche(index)));
+    }));
+    app.on_generate_use_planned(on_window!(|state, index: i32| {
+        state.handle(Msg::Generate(GenerateMsg::UsePlanned(index)));
     }));
     app.on_generate_act(on_window!(|state, kind: i32| {
         state.handle(Msg::Generate(GenerateMsg::Act(kind)));

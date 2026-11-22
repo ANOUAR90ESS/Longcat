@@ -20,10 +20,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use concat_generate::budget::{self, Totals};
+use concat_generate::calendar;
 use concat_generate::checklist;
 use concat_generate::cost::{self, Estimate, Prices};
+use concat_generate::identity;
 use concat_generate::job::{Costs, Idea, Job, Made, Remade, Status, Step};
 use concat_generate::makers;
+use concat_generate::niche;
 use concat_generate::plan::{self, CaptionLook, Editing, Options};
 use concat_generate::providers::{self, DEFAULT_VIDEO_MODEL, Shots, Voice};
 use concat_generate::review;
@@ -33,18 +36,19 @@ use concat_generate::writer::{
     self, Brief, ContentStyle, Level, PictureStyle, Publishing, Research, Suggestion, VideoFormat,
     VideoIdea, Writing,
 };
+use concat_generate::youtube;
 use concat_project::Command;
 use concat_project::commands::NewMedia;
 use concat_project::model::MediaKind;
 use slint::SharedString;
 
-use crate::host::{on_ui, on_ui_in_project, spawn, spawn_in_project};
+use crate::host::{image_at, on_ui, on_ui_in_project, spawn, spawn_in_project};
 use crate::i18n::{t, tf};
 use crate::panes::Msg;
 use crate::panes::export::ExportMsg;
 use crate::panes::settings::installed;
 use crate::studio::Studio;
-use crate::ui::{GenerateSheetData, ScriptRow, ScriptSheetData, ShortResult};
+use crate::ui::{GenerateSheetData, NicheRow, PlanRow, ScriptRow, ScriptSheetData, ShortResult};
 
 /// The lengths offered, in minutes, row for row with the sheet's list.
 const MINUTES: [f64; 8] = [1.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 60.0];
@@ -137,7 +141,9 @@ pub enum GenerateMsg {
     Thumbs(Vec<Thumb>, bool),
     /// The picture models the account can run, or why there is no list:
     /// asked of the maker (1 OpenAI, 2 Gemini) with that key.
-    PictureModels(usize, String, Box<Result<Vec<String>, String>>),
+    /// The key is told by its fingerprint, not itself: every message is
+    /// written to the log (it was, key and all - the owner's log, 21 Nov).
+    PictureModels(usize, u64, Box<Result<Vec<String>, String>>),
     /// Make Short `n` of the results into a project of its own.
     MakeShort(i32),
     /// Short `n`'s storyboard and the files it is cut from, or why not.
@@ -165,6 +171,26 @@ pub enum GenerateMsg {
     /// The video translated: its new idea, its storyboard and its
     /// language's row, or why not.
     Translated(Box<Result<(String, Storyboard, usize), String>>),
+    /// The channel's look designed, its logo and banner drawn when a
+    /// picture maker is chosen (else why not), or why there is none.
+    Looked(Box<Result<Look, String>>),
+    /// Signed in to YouTube: the refresh token and the channel's title,
+    /// or why not.
+    YouTubeConnected(Box<Result<(String, String), String>>),
+    /// A video put up: its id and title, or why not.
+    Uploaded(Box<Result<(String, String), String>>),
+    /// How far an upload is, 0 to 1.
+    UploadProgress(f32),
+    /// The numbers of the videos put up, or why there are none.
+    YouTubeNumbers(Box<Result<Vec<youtube::Numbers>, String>>),
+    /// The channel's month planned, or why not.
+    Planned(Box<Result<calendar::Calendar, String>>),
+    /// Make video `n` of the channel's plan next: its title the idea.
+    UsePlanned(i32),
+    /// Use niche `n` of those proposed: a channel of its own, picked.
+    ChooseNiche(i32),
+    /// The niches proposed, or why there are none.
+    Niches(Box<Result<Vec<niche::Niche>, String>>),
     /// The Shorts picked for the results, or why not.
     ShortsPlanned(Box<Result<shorts::Plan, String>>),
     /// The writer is done; and whether making follows.
@@ -213,6 +239,20 @@ pub struct GeneratePane {
     source: String,
     /// The writer's ideas for the next videos.
     ideas: Vec<VideoIdea>,
+    /// Finding a niche for a new channel: shown, what the person cares
+    /// about, and the niches proposed, the most worth first.
+    niche_open: bool,
+    /// The channel's logo and banner as the sheet shows them: loaded once
+    /// as the sheet opens or the look is drawn, not at every redraw.
+    look_pictures: (slint::Image, slint::Image),
+    /// The channel's plan, as kept with it.
+    calendar: Option<calendar::Calendar>,
+    /// YouTube: an upload under way and how far, and the last numbers
+    /// read, in words.
+    uploading: Option<f32>,
+    youtube_numbers: String,
+    niche_interests: String,
+    niches: Vec<niche::Niche>,
     /// The ideas still to make, in a batch; the one being made is not
     /// among them.
     queue: Vec<String>,
@@ -320,6 +360,13 @@ impl Default for GeneratePane {
             mended: false,
             source: String::new(),
             ideas: Vec::new(),
+            niche_open: false,
+            look_pictures: Default::default(),
+            calendar: None,
+            uploading: None,
+            youtube_numbers: String::new(),
+            niche_interests: String::new(),
+            niches: Vec::new(),
             queue: Vec::new(),
             ended: None,
             also_language: 1,
@@ -401,6 +448,7 @@ impl GeneratePane {
                     self.notes = idea.notes;
                 }
                 self.ask_picture_models(studio);
+                self.load_look_pictures(studio);
                 self.look(studio);
             }
             GenerateMsg::Close => {
@@ -485,6 +533,12 @@ impl GeneratePane {
                         self.source = text;
                         return;
                     }
+                    31 => {
+                        self.niche_interests = text;
+                        return;
+                    }
+                    32 => prefs.youtube_client_id = text,
+                    33 => prefs.youtube_client_secret = text,
                     _ => return,
                 }
                 studio.prefs.save(&studio.host.dirs);
@@ -568,6 +622,7 @@ impl GeneratePane {
                             && studio.prefs.generate.apply_template(row)
                         {
                             studio.prefs.save(&studio.host.dirs);
+                            self.load_look_pictures(studio);
                             self.tally(studio);
                         }
                         return;
@@ -583,6 +638,8 @@ impl GeneratePane {
                     }
                     10 => prefs.level = Some(index.min(Level::ALL.len() - 1)),
                     22 => prefs.shorts_count = Some(index.min(4) + 1),
+                    25 => prefs.plan_per_week = Some(index.min(calendar::PER_WEEK.len() - 1)),
+                    26 => prefs.youtube_privacy = index.min(2),
                     23 => prefs.writer = index.min(1),
                     20 => {
                         prefs.picture_maker = index.min(2);
@@ -809,6 +866,20 @@ impl GeneratePane {
                 4 => self.plan_shorts(studio),
                 5 => self.research_first(studio),
                 6 => self.export_all(studio),
+                8 => self.find_niches(studio),
+                10 => self.design_look(studio),
+                11 => self.plan_month(studio),
+                12 => self.make_plan(studio),
+                13 => self.connect_youtube(studio),
+                14 => self.upload_last(studio),
+                15 => self.read_numbers(studio),
+                16 => {
+                    let prefs = &mut studio.prefs.generate;
+                    prefs.youtube_token.clear();
+                    prefs.youtube_channel.clear();
+                    studio.prefs.save(&studio.host.dirs);
+                }
+                9 => self.niche_open = !self.niche_open,
                 7 => {
                     let found = self.check_before_publishing(studio);
                     match found.is_empty() {
@@ -819,6 +890,105 @@ impl GeneratePane {
                 _ => {}
             },
             GenerateMsg::ExportNext => self.export_next(studio),
+            GenerateMsg::Niches(result) => {
+                self.running = false;
+                match *result {
+                    Ok(niches) => self.niches = niches,
+                    Err(error) => self.failed(error),
+                }
+            }
+            GenerateMsg::ChooseNiche(index) => self.choose_niche(studio, index.max(0) as usize),
+            GenerateMsg::YouTubeConnected(result) => {
+                self.running = false;
+                match *result {
+                    Ok((token, channel)) => {
+                        let prefs = &mut studio.prefs.generate;
+                        prefs.youtube_token = token;
+                        prefs.youtube_channel = channel.clone();
+                        studio.prefs.save(&studio.host.dirs);
+                        studio.notify(&tf("generate.youtubeConnected", &[&channel]), false);
+                    }
+                    Err(error) => self.failed(error),
+                }
+            }
+            GenerateMsg::UploadProgress(share) => {
+                if self.uploading.is_some() {
+                    self.uploading = Some(share);
+                }
+            }
+            GenerateMsg::Uploaded(result) => {
+                self.uploading = None;
+                match *result {
+                    Ok((id, title)) => {
+                        let dir = identity::folder(
+                            &studio.host.dirs.data,
+                            &studio.prefs.generate.channel_name,
+                        );
+                        if let Err(error) = keep_upload(&dir, &id, &title) {
+                            log::warn!("generate: the uploads list: {error}");
+                        }
+                        studio.notify(&tf("generate.uploaded", &[&title]), false);
+                    }
+                    Err(error) => studio.notify(&tf("generate.uploadFailed", &[&error]), true),
+                }
+            }
+            GenerateMsg::YouTubeNumbers(result) => {
+                self.running = false;
+                match *result {
+                    Ok(numbers) if numbers.is_empty() => {
+                        self.youtube_numbers = t("generate.noUploads")
+                    }
+                    Ok(numbers) => {
+                        self.youtube_numbers = numbers
+                            .iter()
+                            .map(|video| {
+                                tf(
+                                    "generate.videoNumbers",
+                                    &[&video.title, &video.views, &video.likes, &video.comments],
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                    Err(error) => self.failed(error),
+                }
+            }
+            GenerateMsg::Planned(result) => {
+                self.running = false;
+                match *result {
+                    Ok(calendar) => {
+                        let dir = identity::folder(
+                            &studio.host.dirs.data,
+                            &studio.prefs.generate.channel_name,
+                        );
+                        if let Err(error) = calendar.keep(&dir) {
+                            log::warn!("generate: the channel's plan: {error}");
+                        }
+                        self.calendar = Some(calendar);
+                    }
+                    Err(error) => self.failed(error),
+                }
+            }
+            GenerateMsg::UsePlanned(index) => {
+                let title = self
+                    .calendar
+                    .as_ref()
+                    .and_then(|calendar| calendar.entries.get(index.max(0) as usize))
+                    .map(|entry| entry.title.clone());
+                if let Some(title) = title {
+                    self.keep(studio);
+                    self.topic = title;
+                    self.notes.clear();
+                    self.look(studio);
+                }
+            }
+            GenerateMsg::Looked(result) => {
+                self.running = false;
+                match *result {
+                    Ok((look, drawn)) => self.take_look(studio, look, drawn),
+                    Err(error) => self.failed(error),
+                }
+            }
             GenerateMsg::Researched(result) => {
                 self.running = false;
                 match *result {
@@ -1051,6 +1221,18 @@ impl GeneratePane {
                         // this one was made.
                         studio.prefs.generate.remember(&board.title);
                         studio.prefs.save(&studio.host.dirs);
+                        // A video of the channel's plan, made: marked so.
+                        if let Some(calendar) = self.calendar.as_mut()
+                            && calendar.mark_made(&self.topic)
+                        {
+                            let dir = identity::folder(
+                                &studio.host.dirs.data,
+                                &studio.prefs.generate.channel_name,
+                            );
+                            if let Err(error) = calendar.keep(&dir) {
+                                log::warn!("generate: the channel's plan: {error}");
+                            }
+                        }
                         // The research it was written from, kept with it.
                         if let Some(job) = self.job(studio) {
                             self.research = job.research();
@@ -1241,6 +1423,14 @@ impl GeneratePane {
                 (
                     0.97 + 0.03 * *n as f32 / (*of).max(1) as f32,
                     tf("generate.checkingPicture", &[n, of]),
+                )
+            }
+            Step::Redrawing { n, of } => {
+                self.phase = 3;
+                self.detail.clear();
+                (
+                    0.97 + 0.03 * *n as f32 / (*of).max(1) as f32,
+                    tf("generate.redrawingPicture", &[n, of]),
                 )
             }
         };
@@ -1591,13 +1781,14 @@ impl GeneratePane {
             2 => prefs.gemini_key.trim().to_owned(),
             _ => String::new(),
         };
+        let print = fingerprint(&key);
         let wanted = &mut self.picture_models;
-        if wanted.maker == maker && wanted.key == key {
+        if wanted.maker == maker && wanted.key == print {
             return;
         }
         *wanted = PictureModels {
             maker,
-            key: key.clone(),
+            key: print,
             ..PictureModels::default()
         };
         if maker == 0 || key.is_empty() {
@@ -1619,7 +1810,7 @@ impl GeneratePane {
             move |studio, _, _, result| {
                 studio.handle(Msg::Generate(GenerateMsg::PictureModels(
                     maker,
-                    key,
+                    print,
                     Box::new(result),
                 )))
             },
@@ -1634,7 +1825,7 @@ impl GeneratePane {
         &mut self,
         studio: &mut Studio,
         maker: usize,
-        key: String,
+        key: u64,
         result: Result<Vec<String>, String>,
     ) {
         let wanted = &mut self.picture_models;
@@ -2186,7 +2377,12 @@ impl GeneratePane {
                             &writer_model,
                             threshold,
                             attempts,
-                            &mut |n, of| progress(Step::Checking { n, of }),
+                            &mut |redrawing, n, of| {
+                                progress(match redrawing {
+                                    true => Step::Redrawing { n, of },
+                                    false => Step::Checking { n, of },
+                                })
+                            },
                             &|| stop.load(Ordering::Acquire),
                         );
                         for check in report.checks.iter().filter(|check| !check.is_acceptable) {
@@ -2254,6 +2450,7 @@ impl GeneratePane {
         self.publishing_busy = true;
         let shots = shots_of(&prefs);
         let voiced = self.voice_row(studio) != 0;
+        let thumbnail_style = prefs.thumbnail_style.clone();
         spawn_in_project(
             move || {
                 let mut publishing = writer::publishing(&board, &key, &model)?;
@@ -2267,8 +2464,13 @@ impl GeneratePane {
                     .map(|placements| plan::chapter_starts(&board, &placements))
                     .unwrap_or_default();
                 job.keep_publishing(&publishing)?;
+                // Every thumbnail of the channel in its own style.
+                let prompt = match thumbnail_style.trim() {
+                    "" => publishing.thumbnail_prompt.clone(),
+                    style => format!("{}. {style}", publishing.thumbnail_prompt.trim()),
+                };
                 let picture = job
-                    .thumbnail_picture(&board, &shots, &publishing.thumbnail_prompt)
+                    .thumbnail_picture(&board, &shots, &prompt)
                     .and_then(|path| {
                         concat_host::media::probe(&path.to_string_lossy())
                             .map(|summary| summary.to_new_media())
@@ -2598,6 +2800,375 @@ impl GeneratePane {
                 studio.handle(Msg::Generate(GenerateMsg::Ideas(Box::new(result))))
             },
         );
+    }
+
+    /// Asks the writer, on a worker, for niches for a new channel: for
+    /// what the person cares about, in the narration's language.
+    fn find_niches(&mut self, studio: &mut Studio) {
+        let (key, model) = studio.prefs.generate.writer();
+        if key.trim().is_empty() {
+            self.message = need_writer_key(&studio.prefs.generate);
+            return;
+        }
+        let interests = self.niche_interests.trim().to_owned();
+        let language = LANGUAGES[studio.prefs.generate.language.min(LANGUAGES.len() - 1)];
+        self.begin(t("generate.nichesBusy"));
+        self.phase = 0;
+        spawn_in_project(
+            move || niche::find(&interests, language, &key, &model),
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::Niches(Box::new(result))))
+            },
+        );
+    }
+
+    /// Makes niche `index` a channel of its own: the choices as they are,
+    /// under the niche's name, with its audience, voice, subjects and
+    /// rules - saved among the channels and picked, its first videos the
+    /// ideas to make. A channel of that name already saved is replaced.
+    fn choose_niche(&mut self, studio: &mut Studio, index: usize) {
+        let Some(chosen) = self.niches.get(index).cloned() else {
+            return;
+        };
+        let prefs = &mut studio.prefs.generate;
+        let mut channel = prefs.as_template(&chosen.name);
+        let new = &mut channel.prefs;
+        new.channel_name = chosen.name.clone();
+        new.channel_audience = chosen.audience.clone();
+        new.channel_voice = chosen.voice.clone();
+        new.channel_topics = chosen.topics.clone();
+        new.channel_rules = chosen.rules.clone();
+        // The old channel's own lines are not this one's.
+        new.channel_opening.clear();
+        new.channel_closing.clear();
+        new.channel_example.clear();
+        prefs.keep_template(channel);
+        if let Some(row) = prefs
+            .templates
+            .iter()
+            .position(|kept| kept.name == chosen.name)
+        {
+            prefs.apply_template(row);
+        }
+        studio.prefs.save(&studio.host.dirs);
+        self.ideas = chosen
+            .first_videos
+            .iter()
+            .map(|title| VideoIdea {
+                title: title.clone(),
+                angle: String::new(),
+            })
+            .collect();
+        self.niches.clear();
+        self.niche_open = false;
+        studio.notify(&tf("generate.nicheChosen", &[&chosen.name]), false);
+        self.load_look_pictures(studio);
+        self.tally(studio);
+    }
+
+    /// Designs the channel's look on a worker - colours, tagline, page
+    /// description, thumbnail style - and draws its logo and banner with
+    /// the picture maker chosen, into the channel's own folder.
+    fn design_look(&mut self, studio: &mut Studio) {
+        let prefs = studio.prefs.generate.clone();
+        let (key, model) = prefs.writer();
+        if key.trim().is_empty() {
+            self.message = need_writer_key(&prefs);
+            return;
+        }
+        let channel = channel_text(&prefs);
+        let language = LANGUAGES[prefs.language.min(LANGUAGES.len() - 1)];
+        let dir = identity::folder(&studio.host.dirs.data, &prefs.channel_name);
+        let pictures = match shots_of(&prefs) {
+            Shots::Models { pictures, .. } => Some(pictures),
+            _ => None,
+        };
+        self.begin(t("generate.lookBusy"));
+        self.phase = 0;
+        spawn_in_project(
+            move || {
+                let look = identity::design(&channel, language, &key, &model)?;
+                let drawn = match &pictures {
+                    Some(pictures) => identity::draw(&look, pictures, &dir),
+                    None => Err(t("generate.lookNoPictures")),
+                };
+                Ok((look, drawn))
+            },
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::Looked(Box::new(result))))
+            },
+        );
+    }
+
+    /// Plans the channel's next thirty days on a worker: as many long
+    /// videos as the week's number makes, none made before.
+    fn plan_month(&mut self, studio: &mut Studio) {
+        let prefs = studio.prefs.generate.clone();
+        let (key, model) = prefs.writer();
+        if key.trim().is_empty() {
+            self.message = need_writer_key(&prefs);
+            return;
+        }
+        let channel = channel_text(&prefs);
+        let language = LANGUAGES[prefs.language.min(LANGUAGES.len() - 1)];
+        let made: Vec<String> = prefs.made_before().to_vec();
+        let per_week = calendar::PER_WEEK[per_week_row(&prefs)];
+        self.begin(t("generate.planBusy"));
+        self.phase = 0;
+        spawn_in_project(
+            move || calendar::plan(&channel, language, &made, per_week, &key, &model),
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::Planned(Box::new(result))))
+            },
+        );
+    }
+
+    /// Makes every video of the channel's plan not made yet, one after
+    /// another in its order, as Make every idea makes a batch: each looked
+    /// over as it is cut, held back from export when something is wrong,
+    /// and marked made in the plan as its script is written. Cancel stops
+    /// the one under way; Create carries it on where it stopped.
+    fn make_plan(&mut self, studio: &mut Studio) {
+        let left: Vec<String> = self
+            .calendar
+            .iter()
+            .flat_map(|calendar| &calendar.entries)
+            .filter(|entry| !entry.made)
+            .map(|entry| entry.title.clone())
+            .collect();
+        if left.is_empty() {
+            studio.notify(&t("generate.planAllMade"), false);
+            return;
+        }
+        let one = self.estimate(studio).total();
+        studio.notify(
+            &tf(
+                "generate.planMaking",
+                &[&left.len(), &dollars(one * left.len() as f64)],
+            ),
+            false,
+        );
+        self.queue = left;
+        self.next(studio);
+    }
+
+    /// Signs in to YouTube: Google's page opened in the browser, and a
+    /// worker waiting on this device for it to come back, then trading
+    /// its code for a refresh token and reading the channel's title.
+    fn connect_youtube(&mut self, studio: &mut Studio) {
+        let client = youtube_client(&studio.prefs.generate);
+        let sign_in = match youtube::begin(&client) {
+            Ok(sign_in) => sign_in,
+            Err(error) => {
+                self.message = error;
+                return;
+            }
+        };
+        if let Err(error) = crate::platform::open_web(&sign_in.url) {
+            self.message = error;
+            return;
+        }
+        self.begin(t("generate.youtubeSigningIn"));
+        self.phase = 0;
+        spawn(
+            move || {
+                let token = sign_in.finish(&client)?;
+                let access = youtube::access(&client, &token)?;
+                let channel = youtube::channel_title(&access)?;
+                Ok((token, channel))
+            },
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::YouTubeConnected(Box::new(
+                    result,
+                ))))
+            },
+        );
+    }
+
+    /// Puts the last video exported up on YouTube, on a worker: as a Short
+    /// when it is one of the video's Shorts, by its file's name, with the
+    /// words written for it; as the long video otherwise.
+    fn upload_last(&mut self, studio: &mut Studio) {
+        if self.uploading.is_some() {
+            return;
+        }
+        let file = PathBuf::from(&studio.export.written);
+        if studio.export.written.trim().is_empty() || !file.is_file() {
+            self.message = t("generate.exportFirst");
+            return;
+        }
+        let prefs = &studio.prefs.generate;
+        let client = youtube_client(prefs);
+        let token = prefs.youtube_token.clone();
+        let privacy = youtube::Privacy::of_row(prefs.youtube_privacy);
+        let stem = file
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let tags = self
+            .publishing
+            .as_ref()
+            .map(|publishing| publishing.tags.clone())
+            .unwrap_or_default();
+        let short = self
+            .plan
+            .iter()
+            .flat_map(|plan| &plan.shorts)
+            .find(|short| file_stem(&short.title) == stem);
+        let upload = match (short, &self.publishing) {
+            (Some(short), _) => youtube::Upload {
+                title: short.title.clone(),
+                description: short.pick.hook.clone(),
+                tags,
+                privacy,
+                short: true,
+            },
+            (None, Some(publishing)) => youtube::Upload {
+                title: publishing.title.clone(),
+                description: publishing.full_description(),
+                tags,
+                privacy,
+                short: false,
+            },
+            (None, None) => youtube::Upload {
+                title: stem.clone(),
+                privacy,
+                ..youtube::Upload::default()
+            },
+        };
+        let title = upload.title.clone();
+        self.uploading = Some(0.0);
+        studio.notify(&tf("generate.uploading", &[&title]), false);
+        spawn(
+            move || {
+                let access = youtube::access(&client, &token)?;
+                let id = youtube::upload(&access, &file, &upload, &mut |share| {
+                    on_ui(move |studio, _, _| {
+                        studio.handle(Msg::Generate(GenerateMsg::UploadProgress(share)))
+                    });
+                })?;
+                Ok((id, title))
+            },
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::Uploaded(Box::new(result))))
+            },
+        );
+    }
+
+    /// Reads the numbers of every video the channel put up from here.
+    fn read_numbers(&mut self, studio: &mut Studio) {
+        let prefs = &studio.prefs.generate;
+        let client = youtube_client(prefs);
+        let token = prefs.youtube_token.clone();
+        let dir = identity::folder(&studio.host.dirs.data, &prefs.channel_name);
+        let ids: Vec<String> = read_uploads(&dir).into_iter().map(|(id, _)| id).collect();
+        self.begin(t("generate.readingNumbers"));
+        self.phase = 0;
+        spawn(
+            move || {
+                if ids.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let access = youtube::access(&client, &token)?;
+                youtube::numbers(&access, &ids)
+            },
+            |studio, _, _, result| {
+                studio.handle(Msg::Generate(GenerateMsg::YouTubeNumbers(Box::new(result))))
+            },
+        );
+    }
+
+    /// What the plan of the week's number would cost, at the sheet's
+    /// choices as they are now: the videos, one's cost, and all of them.
+    fn plan_cost(&self, studio: &Studio) -> String {
+        let prefs = &studio.prefs.generate;
+        let count = calendar::Calendar::count_for(calendar::PER_WEEK[per_week_row(prefs)]);
+        let one = self.estimate(studio).total();
+        tf(
+            "generate.planCost",
+            &[&count, &dollars(one), &dollars(one * count as f64)],
+        )
+    }
+
+    /// Keeps the channel's look: its colours and words in the channel's
+    /// choices, its logo in the corner of every video and its banner, and
+    /// in the channel saved under its name when there is one.
+    fn take_look(
+        &mut self,
+        studio: &mut Studio,
+        look: identity::Identity,
+        drawn: Result<(PathBuf, PathBuf), String>,
+    ) {
+        let prefs = &mut studio.prefs.generate;
+        prefs.brand_color = look.colour.clone();
+        prefs.brand_second = look.second.clone();
+        prefs.channel_tagline = look.tagline.clone();
+        prefs.channel_about = look.about.clone();
+        prefs.thumbnail_style = look.thumbnail_style.clone();
+        match drawn {
+            Ok((logo, banner)) => {
+                prefs.brand_logo = logo.to_string_lossy().into_owned();
+                prefs.brand_banner = banner.to_string_lossy().into_owned();
+                studio.notify(&t("generate.lookReady"), false);
+            }
+            Err(why) => {
+                log::warn!("generate: the channel's pictures: {why}");
+                studio.notify(&tf("generate.lookUndrawn", &[&why]), true);
+            }
+        }
+        let prefs = &mut studio.prefs.generate;
+        let name = prefs.channel_name.trim().to_owned();
+        if !name.is_empty() && prefs.templates.iter().any(|kept| kept.name == name) {
+            let channel = prefs.as_template(&name);
+            prefs.keep_template(channel);
+        }
+        studio.prefs.save(&studio.host.dirs);
+        self.load_look_pictures(studio);
+    }
+
+    /// Loads the channel's logo and banner for the sheet to show.
+    fn load_look_pictures(&mut self, studio: &Studio) {
+        let load = |path: &str| {
+            Some(path)
+                .filter(|path| !path.trim().is_empty())
+                .and_then(|path| image_at(Path::new(path)))
+                .unwrap_or_default()
+        };
+        let prefs = &studio.prefs.generate;
+        self.look_pictures = (load(&prefs.brand_logo), load(&prefs.brand_banner));
+        // The channel's plan is kept beside its look.
+        self.calendar = (!prefs.channel_name.trim().is_empty())
+            .then(|| identity::folder(&studio.host.dirs.data, &prefs.channel_name))
+            .and_then(|dir| calendar::Calendar::read(&dir));
+    }
+
+    /// The niches proposed, as the sheet lists them.
+    fn niche_rows(&self) -> Vec<NicheRow> {
+        self.niches
+            .iter()
+            .map(|found| NicheRow {
+                name: found.name.as_str().into(),
+                summary: found.summary.as_str().into(),
+                why: found.why.as_str().into(),
+                scores: tf(
+                    "generate.nicheScores",
+                    &[
+                        &found.demand,
+                        &found.competition,
+                        &found.revenue,
+                        &found.faceless,
+                    ],
+                )
+                .into(),
+                videos: found
+                    .first_videos
+                    .iter()
+                    .map(|title| format!("• {title}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .into(),
+            })
+            .collect()
     }
 
     /// The ideas list's rows: what to do, then each idea and why.
@@ -3318,6 +3889,57 @@ impl GeneratePane {
             status: self.status.as_str().into(),
             can_short: self.all_made && !self.running && away.is_none(),
             results: self.all_made && away.is_none(),
+            niche_open: self.niche_open,
+            look_words: [
+                prefs.channel_tagline.trim(),
+                prefs.channel_about.trim(),
+                prefs.thumbnail_style.trim(),
+            ]
+            .iter()
+            .filter(|words| !words.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join("\n\n")
+            .into(),
+            look_colours: [prefs.brand_color.trim(), prefs.brand_second.trim()]
+                .iter()
+                .filter(|colour| !colour.is_empty())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" · ")
+                .into(),
+            plan_per_week: per_week_row(prefs) as i32,
+            youtube_client_id: prefs.youtube_client_id.as_str().into(),
+            youtube_client_secret: prefs.youtube_client_secret.as_str().into(),
+            youtube_channel: prefs.youtube_channel.as_str().into(),
+            youtube_privacy: prefs.youtube_privacy.min(2) as i32,
+            uploading: self.uploading.is_some(),
+            upload_progress: self.uploading.unwrap_or(0.0),
+            youtube_numbers: self.youtube_numbers.as_str().into(),
+            plan_left: self
+                .calendar
+                .iter()
+                .flat_map(|calendar| &calendar.entries)
+                .filter(|entry| !entry.made)
+                .count() as i32,
+            plan_cost: self.plan_cost(studio).into(),
+            plan: std::rc::Rc::new(slint::VecModel::from(
+                self.calendar
+                    .iter()
+                    .flat_map(|calendar| &calendar.entries)
+                    .map(|entry| PlanRow {
+                        day: tf("generate.planDay", &[&entry.day]).into(),
+                        title: entry.title.as_str().into(),
+                        angle: entry.angle.as_str().into(),
+                        made: entry.made,
+                    })
+                    .collect::<Vec<_>>(),
+            ))
+            .into(),
+            look_logo: self.look_pictures.0.clone(),
+            look_banner: self.look_pictures.1.clone(),
+            niche_interests: self.niche_interests.as_str().into(),
+            niches: std::rc::Rc::new(slint::VecModel::from(self.niche_rows())).into(),
             shorts: std::rc::Rc::new(slint::VecModel::from(
                 self.plan
                     .iter()
@@ -3841,6 +4463,64 @@ fn brand_of(prefs: &crate::prefs::GeneratePrefs) -> Option<concat_generate::job:
     })
 }
 
+/// The person's own OAuth client, as typed.
+fn youtube_client(prefs: &crate::prefs::GeneratePrefs) -> youtube::Client {
+    youtube::Client {
+        id: prefs.youtube_client_id.trim().to_owned(),
+        secret: prefs.youtube_client_secret.trim().to_owned(),
+    }
+}
+
+/// The videos the channel put up from here, id and title, oldest first,
+/// kept in its folder.
+fn read_uploads(channel_dir: &Path) -> Vec<(String, String)> {
+    std::fs::read(channel_dir.join("uploads.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Adds a video put up to the channel's list.
+fn keep_upload(channel_dir: &Path, id: &str, title: &str) -> Result<(), String> {
+    let mut uploads = read_uploads(channel_dir);
+    uploads.retain(|(kept, _)| kept != id);
+    uploads.push((id.to_owned(), title.to_owned()));
+    std::fs::create_dir_all(channel_dir).map_err(|error| error.to_string())?;
+    let bytes = serde_json::to_vec_pretty(&uploads).map_err(|error| error.to_string())?;
+    std::fs::write(channel_dir.join("uploads.json"), bytes).map_err(|error| error.to_string())
+}
+
+/// The row of `calendar::PER_WEEK` the plan holds: three a week unless
+/// chosen.
+fn per_week_row(prefs: &crate::prefs::GeneratePrefs) -> usize {
+    prefs
+        .plan_per_week
+        .unwrap_or(2)
+        .min(concat_generate::calendar::PER_WEEK.len() - 1)
+}
+
+/// The channel in use as the writer is told it when designing or planning
+/// for it: the fields filled in, a line each.
+fn channel_text(prefs: &crate::prefs::GeneratePrefs) -> String {
+    [
+        ("Channel", &prefs.channel_name),
+        ("Tagline", &prefs.channel_tagline),
+        ("Who watches", &prefs.channel_audience),
+        ("How it sounds", &prefs.channel_voice),
+        ("What it covers", &prefs.channel_topics),
+        ("Rules", &prefs.channel_rules),
+    ]
+    .iter()
+    .filter(|(_, value)| !value.trim().is_empty())
+    .map(|(label, value)| format!("{label}: {}", value.trim()))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+/// A channel's look as designed, and its logo and banner as drawn - or
+/// why they were not.
+pub type Look = (identity::Identity, Result<(PathBuf, PathBuf), String>);
+
 /// What goes up with the video, written and kept, and the thumbnail's
 /// picture probed - or why there is none.
 pub type Published = (Publishing, Result<NewMedia, String>);
@@ -4006,6 +4686,15 @@ fn warning_text(warning: &checklist::Warning) -> String {
     }
 }
 
+/// A key told apart from another without being kept or written anywhere:
+/// what a message carries in its place, every message being logged.
+fn fingerprint(key: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// One file of Export everything.
 enum Exporting {
     /// A timeline of the video's project: its id and the file's name.
@@ -4138,8 +4827,8 @@ fn project_apart(
 struct PictureModels {
     /// Asked of: 1 OpenAI, 2 Gemini; 0 for none asked.
     maker: usize,
-    /// With this key.
-    key: String,
+    /// With the key of this fingerprint; see [`fingerprint`].
+    key: u64,
     /// The answer is on its way.
     asking: bool,
     /// The models, the default first; empty until they come, or when the
@@ -4258,6 +4947,10 @@ fn rough(step: &Step) -> Option<(f32, String)> {
         Step::Checking { n, of } => Some((
             0.97 + 0.03 * (*n as f32 / (*of).max(1) as f32),
             tf("generate.checkingPicture", &[n, of]),
+        )),
+        Step::Redrawing { n, of } => Some((
+            0.97 + 0.03 * (*n as f32 / (*of).max(1) as f32),
+            tf("generate.redrawingPicture", &[n, of]),
         )),
     }
 }

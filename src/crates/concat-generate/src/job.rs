@@ -81,6 +81,15 @@ pub enum Step {
         /// Of how many.
         of: usize,
     },
+    /// Picture `n` (from 1) of `of` that did not match its narration being
+    /// drawn again: a picture model's minute, said so the bar does not sit
+    /// on the last check (the owner, 21 Nov).
+    Redrawing {
+        /// This one.
+        n: usize,
+        /// Of how many.
+        of: usize,
+    },
 }
 
 /// The idea a job was written from: kept in its folder, so the sheet opened

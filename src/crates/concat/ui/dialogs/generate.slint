@@ -21,6 +21,26 @@ import { ProgressRing } from "export.slint";
 // the script included, then lays the cut on a new timeline. While it runs
 // the sheet is its progress report, as the speech sheets are.
 
+/// A niche proposed for a new channel.
+export struct NicheRow {
+    name: string,
+    summary: string,
+    why: string,
+    /// Its judged figures, in words: demand, crowd, what it pays, faceless.
+    scores: string,
+    /// Its first videos, a line each.
+    videos: string,
+}
+
+/// A video of the channel's plan.
+export struct PlanRow {
+    /// "Day 4", in words.
+    day: string,
+    title: string,
+    angle: string,
+    made: bool,
+}
+
 /// One Short of the video's results.
 export struct ShortResult {
     title: string,
@@ -177,6 +197,34 @@ export struct GenerateSheetData {
     /// The video is made: its results are shown, while a Short of it is
     /// made too.
     results: bool,
+    /// Finding a niche for a new channel: shown, what the person cares
+    /// about, and the niches proposed.
+    niche-open: bool,
+    niche-interests: string,
+    niches: [NicheRow],
+    /// The channel's look: its words (tagline, page description, thumbnail
+    /// style), its colours, its logo and its banner; empty until designed.
+    /// The channel's plan: how many long videos a week (a row of 1, 2, 3,
+    /// 5), what it would cost, and its videos.
+    plan-per-week: int,
+    /// YouTube: the person's OAuth client, the channel signed in to (empty
+    /// for none), who sees a video put up (0 private, 1 unlisted, 2
+    /// public), an upload under way and how far, and the last numbers.
+    youtube-client-id: string,
+    youtube-client-secret: string,
+    youtube-channel: string,
+    youtube-privacy: int,
+    uploading: bool,
+    upload-progress: float,
+    youtube-numbers: string,
+    /// How many of the plan's videos are not made yet.
+    plan-left: int,
+    plan-cost: string,
+    plan: [PlanRow],
+    look-words: string,
+    look-colours: string,
+    look-logo: image,
+    look-banner: image,
     /// The video's Shorts, each made into a project of its own when
     /// asked; empty until they are picked, and while there are no results.
     shorts: [ShortResult],
@@ -312,12 +360,15 @@ export component GenerateDialog inherits Modal {
     /// 7 Replicate image model, 8 spend limit, 9 price of a clip, 10 price
     /// of a still, 11-16 the channel: name, audience, voice, opening line,
     /// closing line, a script it likes; 26 its topics, 27 its rules; 28
-    /// the research notes.
+    /// the research notes; 31 what a new channel's owner cares about; 32
+    /// and 33 the YouTube OAuth client's id and secret.
     callback text-edited(field: int, text: string);
     /// Which choice: 0 minutes, 1 language, 2 aspect, 3 voice, 4 shots,
     /// 5 music, 6 clips, 7 caption look, 8 content style, 9 picture quality,
     /// 10 audience level, 11 visuals (pictures and cards, or cards only),
-    /// 24 the picture model, from the list the key can run.
+    /// 24 the picture model, from the list the key can run, 25 how many
+    /// long videos a week the channel's plan holds, 26 who sees a video
+    /// put up on YouTube.
     callback choice-changed(field: int, index: int);
     /// Which switch: 0 captions, 1 titles, 2 export when done, 3 research
     /// on the web.
@@ -331,10 +382,18 @@ export component GenerateDialog inherits Modal {
     callback make-short(index: int);
     callback open-short(index: int);
     callback open-video();
+    /// Use niche `index`: a channel of its own, picked.
+    callback choose-niche(index: int);
+    /// Make video `index` of the channel's plan next.
+    callback use-planned(index: int);
     /// One of the sheet's buttons: 0 suggest ideas, 1 make every idea,
     /// 2 make the video in another language, 3 save the choices as a
     /// series, 4 pick the video's Shorts, 5 research first, 6 export
-    /// everything.
+    /// everything, 7 check before publishing, 8 suggest niches, 9 show or
+    /// hide finding a niche, 10 design the channel's look, 11 plan its
+    /// next thirty days, 12 make every video of the plan not made yet, 13
+    /// connect YouTube, 14 put the last export up, 15 read the numbers, 16
+    /// disconnect YouTube.
     callback act(kind: int);
     callback publish();
     callback cancel();
@@ -395,6 +454,93 @@ export component GenerateDialog inherits Modal {
                             color: Theme.fg-dim;
                             font-size: Theme.fs-sm;
                             wrap: word-wrap;
+                        }
+
+                        // No channel yet, or a new one: niches proposed
+                        // for what the person cares about, each judged and
+                        // each the channel it would be, picked in one tap.
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: root.data.niche-open ? I18n.t("generate.nicheClose") : I18n.t("generate.findNiche");
+                                glyph: Glyph.search;
+                                ghost: true;
+                                clicked => { root.act(9); }
+                            }
+                        }
+
+                        if root.data.niche-open: DialogRow {
+                            label: I18n.t("generate.nicheInterests");
+                            Field {
+                                value: root.data.niche-interests;
+                                placeholder: I18n.t("generate.nicheInterestsHint");
+                                edited(text) => { root.text-edited(31, text); }
+                            }
+                        }
+
+                        if root.data.niche-open: HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.suggestNiches");
+                                glyph: Glyph.search;
+                                clicked => { root.act(8); }
+                            }
+                        }
+
+                        if root.data.niche-open: Text {
+                            text: I18n.t("generate.nicheHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        for found[index] in root.data.niches: VerticalLayout {
+                            spacing: 4px;
+                            padding-top: 6px;
+
+                            Text {
+                                text: found.name;
+                                font-size: Theme.fs-lg;
+                                font-weight: Theme.weight-title;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: found.summary;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: found.scores;
+                                color: Theme.accent;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: found.why;
+                                color: Theme.fg-dim;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: found.videos;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                            }
+
+                            HorizontalLayout {
+                                alignment: start;
+
+                                Button {
+                                    label: I18n.t("generate.useNiche");
+                                    primary: true;
+                                    clicked => { root.choose-niche(index); }
+                                }
+                            }
                         }
 
                         // A kind of video made whole: picking one sets the
@@ -1173,10 +1319,254 @@ export component GenerateDialog inherits Modal {
                         }
                     }
 
+                    // YouTube, through the person's own Google OAuth client:
+                    // signed in once in the browser, then videos put up and
+                    // their numbers read back.
+                    DialogSection {
+                        title: "YouTube";
+
+                        Text {
+                            text: I18n.t("generate.youtubeHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        DialogRow {
+                            label: "Client ID";
+                            Field {
+                                value: root.data.youtube-client-id;
+                                technical: true;
+                                placeholder: "….apps.googleusercontent.com";
+                                edited(text) => { root.text-edited(32, text); }
+                            }
+                        }
+
+                        DialogRow {
+                            label: "Client secret";
+                            Field {
+                                value: root.data.youtube-client-secret;
+                                secret: true;
+                                technical: true;
+                                placeholder: "GOCSPX-…";
+                                edited(text) => { root.text-edited(33, text); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.youtube-channel != "" ? I18n.t("generate.youtubeIn") + " " + root.data.youtube-channel : I18n.t("generate.youtubeOut");
+                            color: root.data.youtube-channel != "" ? Theme.accent : Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+
+                            Button {
+                                label: root.data.youtube-channel != "" ? I18n.t("generate.youtubeReconnect") : I18n.t("generate.youtubeConnect");
+                                glyph: Glyph.lock;
+                                enabled: !root.data.running;
+                                clicked => { root.act(13); }
+                            }
+
+                            if root.data.youtube-channel != "": Button {
+                                label: I18n.t("generate.youtubeDisconnect");
+                                ghost: true;
+                                clicked => { root.act(16); }
+                            }
+                        }
+
+                        if root.data.youtube-channel != "": DialogRow {
+                            label: I18n.t("generate.youtubePrivacy");
+                            Select {
+                                options: [I18n.t("generate.youtubePrivate"), I18n.t("generate.youtubeUnlisted"), I18n.t("generate.youtubePublic")];
+                                current: root.data.youtube-privacy;
+                                changed(index) => { root.choice-changed(26, index); }
+                            }
+                        }
+
+                        if root.data.youtube-channel != "": HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+
+                            Button {
+                                label: I18n.t("generate.uploadLast");
+                                glyph: Glyph.film;
+                                primary: true;
+                                enabled: !root.data.uploading;
+                                clicked => { root.act(14); }
+                            }
+
+                            Button {
+                                label: I18n.t("generate.readNumbers");
+                                glyph: Glyph.search;
+                                ghost: true;
+                                enabled: !root.data.running;
+                                clicked => { root.act(15); }
+                            }
+                        }
+
+                        if root.data.uploading: Progress {
+                            value: root.data.upload-progress;
+                            live: true;
+                        }
+
+                        if root.data.youtube-channel != "": Text {
+                            text: I18n.t("generate.uploadHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.youtube-numbers != "": Text {
+                            text: root.data.youtube-numbers;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+                    }
+
                     // The channel the writer writes for, told once and
                     // kept; and whether it reads up on the web first.
                     DialogSection {
                         title: I18n.t("generate.channel");
+
+                        // The channel's look, designed for it and drawn:
+                        // colours, tagline, page description, thumbnail
+                        // style, logo and banner.
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.designLook");
+                                glyph: Glyph.sparkle;
+                                clicked => { root.act(10); }
+                            }
+                        }
+
+                        Text {
+                            text: I18n.t("generate.designLookHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        if root.data.look-colours != "": Text {
+                            text: root.data.look-colours;
+                            color: Theme.accent;
+                            font-size: Theme.fs-sm;
+                        }
+
+                        if root.data.look-logo.width > 0 || root.data.look-banner.width > 0: HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            if root.data.look-logo.width > 0: Image {
+                                source: root.data.look-logo;
+                                width: 72px;
+                                height: 72px;
+                                image-fit: cover;
+                            }
+
+                            if root.data.look-banner.width > 0: Image {
+                                source: root.data.look-banner;
+                                width: 128px;
+                                height: 72px;
+                                image-fit: cover;
+                            }
+                        }
+
+                        if root.data.look-words != "": Text {
+                            text: root.data.look-words;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        // The channel's next thirty days: long videos in
+                        // order, each on its day, none made before, the
+                        // whole plan's cost said before any is made.
+                        DialogRow {
+                            label: I18n.t("generate.planPerWeek");
+                            Select {
+                                options: ["1", "2", "3", "5"];
+                                current: root.data.plan-per-week;
+                                changed(index) => { root.choice-changed(25, index); }
+                            }
+                        }
+
+                        Text {
+                            text: root.data.plan-cost;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: root.data.plan.length > 0 ? I18n.t("generate.planAgain") : I18n.t("generate.planMonth");
+                                glyph: Glyph.sparkle;
+                                clicked => { root.act(11); }
+                            }
+                        }
+
+                        // Every video of the plan not made yet, one after
+                        // another: each looked over, held back from export
+                        // when something is wrong. Cancel stops it.
+                        if root.data.plan-left > 0: HorizontalLayout {
+                            alignment: start;
+
+                            Button {
+                                label: I18n.t("generate.makePlan");
+                                glyph: Glyph.film;
+                                primary: true;
+                                enabled: !root.data.running;
+                                clicked => { root.act(12); }
+                            }
+                        }
+
+                        if root.data.plan-left > 0: Text {
+                            text: I18n.t("generate.makePlanHint");
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+
+                        for entry[index] in root.data.plan: HorizontalLayout {
+                            spacing: 8px;
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+
+                                Text {
+                                    text: entry.day + " · " + entry.title;
+                                    color: entry.made ? Theme.fg-dim : Theme.fg;
+                                    wrap: word-wrap;
+                                }
+
+                                if entry.angle != "": Text {
+                                    text: entry.angle;
+                                    color: Theme.fg-dim;
+                                    font-size: Theme.fs-sm;
+                                    wrap: word-wrap;
+                                }
+                            }
+
+                            if entry.made: Text {
+                                text: "✓";
+                                color: Theme.accent;
+                                vertical-alignment: center;
+                            }
+
+                            if !entry.made: Button {
+                                label: I18n.t("generate.makeThis");
+                                ghost: true;
+                                clicked => { root.use-planned(index); }
+                            }
+                        }
 
                         HorizontalLayout {
                             spacing: 10px;

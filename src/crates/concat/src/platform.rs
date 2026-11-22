@@ -734,6 +734,35 @@ pub fn install_video_actions(actions: VideoActions) {
     let _ = VIDEO_ACTIONS.set(actions);
 }
 
+/// How a phone opens a web page in its browser: set once by the phone's
+/// shell at start-up.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub type LinkOpener = Box<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+static LINK_OPENER: std::sync::OnceLock<LinkOpener> = std::sync::OnceLock::new();
+
+/// Installs what [`open_web`] calls on a phone. Once.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub fn install_link_opener(opener: LinkOpener) {
+    let _ = LINK_OPENER.set(opener);
+}
+
+/// Opens `url` in the browser: Google's sign-in, for YouTube.
+pub fn open_web(url: &str) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        match LINK_OPENER.get() {
+            Some(open) => open(url),
+            None => Err("this phone cannot open a web page from here".to_owned()),
+        }
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        opener::open(url).map_err(|error| error.to_string())
+    }
+}
+
 /// Plays a finished export: on a phone the one it last put with its
 /// videos, in its own player; on a desk `path`, in the default one.
 pub fn play_export(path: &str) -> Result<(), String> {
