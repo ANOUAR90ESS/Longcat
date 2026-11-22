@@ -735,10 +735,16 @@ One release when all four stages are done.
   same studio, its prompt the whole object as built so far, and a clip of
   the new part arriving. The format sets three minutes, upright, every
   shot a clip, captions a few words at a time.
-- B. **Scenes that follow on**: video, not stills - each clip made from
-  the object as it was (its first frame) to the object with the new part
-  (its last), so the machine grows in one take; keyframes made by editing
-  the one before, where the picture maker can.
+- B. **Scenes that follow on** - done. The board is written `chained`;
+  its shots are made one at a time, in order. Each shot's picture is the
+  shot before's edited - "keep this exact picture ... change only this"
+  (`Pictures::edit`: OpenAI's image edits, Gemini with the picture given;
+  made anew where the maker does not edit, Replicate). Each clip runs
+  from the shot before's picture to its own (`Clips::make_direct`'s last
+  frame: Kling's `image_tail` in its pro mode, Seedance's first and last
+  frames; asked again from the first alone where it is not taken), so the
+  machine grows in one take. No hook is written apart for it: it would
+  give the name away.
 - C. **On screen**: "What are we building?" in the corner until the
   reveal; the ⚠ and ✓ tags on the object; one word of each caption in the
   accent colour.

@@ -633,6 +633,7 @@ pub fn write(
     }
 
     let mut board = Storyboard {
+        chained: brief.format == VideoFormat::Build,
         title: text(&outline["title"]),
         language: brief.language.clone(),
         aspect: brief.aspect.clone(),
@@ -747,7 +748,9 @@ pub fn write(
     // The hook last, from the script as it came out: an opening written
     // first promises what the plan was, and this one what the video has.
     // A video of cards alone has no picture to open on, and none is made.
-    if brief.hook && !brief.cards_only {
+    // "What are we building?" opens on its everyday object and keeps the
+    // machine's name back: a hook written apart would give it away.
+    if brief.hook && !brief.cards_only && brief.format != VideoFormat::Build {
         progress(Writing::Hook);
         match ask(&hook_tool(), hook_prompt(&board, &brief_text)) {
             Ok(got) => match hook_scene(&got) {
