@@ -47,7 +47,7 @@ pub enum Shots {
         replicate: String,
         /// The still a clip starts from looked at before the clip is
         /// made, and drawn again when it fails; None not to look.
-        frame_check: Option<crate::visual::FrameCheck>,
+        frame_check: Option<Box<crate::visual::FrameCheck>>,
     },
 }
 

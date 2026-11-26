@@ -1860,7 +1860,7 @@ impl Job {
                 pictures,
                 clips,
                 order,
-                check: frame_check.as_ref(),
+                check: frame_check.as_deref(),
             };
             match self.clip(&clip, inputs.as_ref(), prices, spend) {
                 Ok(()) => return Ok(Outcome::Made),
