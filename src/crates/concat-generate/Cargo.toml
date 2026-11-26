@@ -19,22 +19,22 @@ concat-media.workspace = true
 concat-text.workspace = true
 # Each frame of an explainer is SVG, rasterised on the CPU - the same on a
 # phone as on a desk. The version and features Slint already builds.
-resvg = { version = "0.48", default-features = false, features = ["text"] }
+resvg = { version = "0.49", default-features = false, features = ["text"] }
 # How long an outline is, so it can be drawn on along its length.
 kurbo = "0.13"
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 # The writer, the voice and the shot generators are web services. Blocking
 # on purpose, as concat-host's downloads are: each runs on a worker thread.
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "3", features = ["json"] }
 # ElevenLabs answers with timings as JSON, the audio in it as base64.
-base64 = "0.22"
+base64 = "0.23"
 # Kling's API takes a token signed with the account's secret key: a JWT,
 # HMAC-SHA256. The versions the workspace already locks.
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 # Draft shots are colour cards, written as PNGs: no service, no cost.
-png = "0.17"
+png = "0.18"
 # What an unattended run had to work around - a retry, a stand-in shot -
 # goes to the window's log.
 log = { version = "0.4", features = ["std"] }
