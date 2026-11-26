@@ -769,6 +769,7 @@ impl Job {
                             stem,
                             idea: idea_of(scene),
                             previous,
+                            look: crate::visual::check_prompt(scene, shot, &board.style.visual),
                         });
                         continue;
                     }
@@ -1346,6 +1347,8 @@ struct Queued<'a> {
     /// On a chained board, the shot before it, whose picture it follows
     /// on from.
     previous: Option<String>,
+    /// What its picture is looked at against, before a clip is made of it.
+    look: String,
 }
 
 /// What every shot of a batch shares.
@@ -1435,6 +1438,7 @@ impl Job {
                             .previous
                             .as_deref()
                             .and_then(|stem| self.keyframe(stem));
+                        order.look = queued.look.clone();
                         let mut inputs = ready.clone();
                         let outcome = self.replicate_shot(
                             batch.shots,
@@ -1539,6 +1543,9 @@ struct Order<'a> {
     /// On a chained board, the picture of the shot before: this shot's
     /// picture is that one edited, and its clip runs from it.
     previous: Option<PathBuf>,
+    /// What a clip's picture is looked at against before the clip is
+    /// made; empty not to look.
+    look: String,
 }
 
 impl<'a> Order<'a> {
@@ -1559,6 +1566,7 @@ impl<'a> Order<'a> {
             dir,
             stem,
             previous: None,
+            look: String::new(),
         }
     }
 }
@@ -1788,8 +1796,9 @@ impl Job {
                 )?;
             }
             Shots::Models { .. } => {
-                let order =
+                let mut order =
                     Order::new(board, chapter, shot, shot_seconds(scene, shot), &dir, &take);
+                order.look = crate::visual::check_prompt(scene, shot, &board.style.visual);
                 let refused = match self.replicate_shot(shots, &order, inputs, prices, spend)? {
                     Outcome::Made => None,
                     Outcome::StillForClip(error) | Outcome::Failed(error) => Some(error),
@@ -1823,7 +1832,10 @@ impl Job {
         spend: &Spend,
     ) -> Result<Outcome, String> {
         let Shots::Models {
-            pictures, clips, ..
+            pictures,
+            clips,
+            frame_check,
+            ..
         } = shots
         else {
             return Err("these shots are not made by models".to_owned());
@@ -1848,6 +1860,7 @@ impl Job {
                 pictures,
                 clips,
                 order,
+                check: frame_check.as_deref(),
             };
             match self.clip(&clip, inputs.as_ref(), prices, spend) {
                 Ok(()) => return Ok(Outcome::Made),
@@ -1937,6 +1950,8 @@ struct Clip<'a> {
     pictures: &'a crate::makers::Pictures,
     clips: &'a Clips,
     order: &'a Order<'a>,
+    /// The picture looked at before the clip is made; None not to.
+    check: Option<&'a crate::visual::FrameCheck>,
 }
 
 impl Job {
@@ -1950,22 +1965,86 @@ impl Job {
         if let Some(frame) = providers::existing(&frames, order.stem, &SHOT_EXTENSIONS) {
             return Ok(frame);
         }
-        spend.take(prices.still)?;
-        match &order.previous {
-            Some(previous) => edited(
-                clip.pictures,
-                previous,
-                &order.prompt,
-                order.aspect,
-                &frames,
+        let draw = |prompt: &str| {
+            spend.take(prices.still)?;
+            match &order.previous {
+                Some(previous) => edited(
+                    clip.pictures,
+                    previous,
+                    prompt,
+                    order.aspect,
+                    &frames,
+                    order.stem,
+                ),
+                None => providers::retry(|| {
+                    clip.pictures
+                        .make(prompt, order.aspect, &frames, order.stem)
+                }),
+            }
+            .inspect_err(|_| spend.refund(prices.still))
+        };
+        let mut frame = draw(&order.prompt)?;
+        let Some(check) = clip.check.filter(|_| !order.look.is_empty()) else {
+            return Ok(frame);
+        };
+        // Looked at before the clip is paid for: a wrong still costs cents
+        // to draw again, the clip made from it dollars.
+        let mut prompt = order.prompt.clone();
+        let mut looked = crate::visual::look_file(
+            order.stem,
+            &frame,
+            &order.look,
+            &check.key,
+            &check.model,
+            check.threshold,
+        );
+        let mut tries = 0;
+        while looked.checked && !looked.is_acceptable && tries < check.attempts {
+            tries += 1;
+            log::info!(
+                "{}: its picture ({}/10) drawn again before its clip: missing {:?}, wrong {:?}",
                 order.stem,
-            ),
-            None => providers::retry(|| {
-                clip.pictures
-                    .make(&order.prompt, order.aspect, &frames, order.stem)
-            }),
+                looked.semantic_alignment_score,
+                looked.missing_elements,
+                looked.visual_mismatches
+            );
+            prompt = looked.amend(&prompt);
+            // The picture set aside, so a failed redraw leaves it in place.
+            let aside = frame.with_extension("before");
+            if std::fs::rename(&frame, &aside).is_err() {
+                break;
+            }
+            match draw(&prompt) {
+                Ok(redrawn) => {
+                    let _ = std::fs::remove_file(&aside);
+                    frame = redrawn;
+                    looked = crate::visual::look_file(
+                        order.stem,
+                        &frame,
+                        &order.look,
+                        &check.key,
+                        &check.model,
+                        check.threshold,
+                    );
+                }
+                Err(error) => {
+                    let _ = std::fs::rename(&aside, &frame);
+                    log::warn!(
+                        "{}: its picture could not be drawn again: {error}",
+                        order.stem
+                    );
+                    break;
+                }
+            }
         }
-        .inspect_err(|_| spend.refund(prices.still))
+        if looked.checked && !looked.is_acceptable {
+            log::warn!(
+                "{}: its picture ({}/10) still short of its words; the clip is made from it",
+                order.stem,
+                looked.semantic_alignment_score
+            );
+        }
+        Ok(frame)
     }
 
     /// The picture shot `stem` shows, for the next shot of a chained board
@@ -2509,6 +2588,7 @@ mod tests {
             },
             clips: None,
             replicate: String::new(),
+            frame_check: None,
         };
         let mut started = 0;
         let error = job

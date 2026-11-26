@@ -2145,9 +2145,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
 /// would have had the same crash. Nothing those handlers do is anything
 /// a closing app needs: the log is flushed here, and the files a project
 /// writes are written before the window closes.
+///
+/// Android too: `exit` there tore the audio output's mutex down under its
+/// own thread, and the app closing was logged as a crash, "pthread_mutex_lock
+/// called on a destroyed mutex" in the AudioTrack thread (the owner's log,
+/// 26 Nov), as the card drawer's thread did on the Android 15 emulator.
 fn leave(code: i32) -> ! {
     log::logger().flush();
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::io::Write;
         let _ = std::io::stdout().flush();
@@ -2156,6 +2161,6 @@ fn leave(code: i32) -> ! {
         // this one's is touched after it.
         unsafe { libc::_exit(code) }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     std::process::exit(code);
 }

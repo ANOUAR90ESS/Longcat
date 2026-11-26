@@ -56,6 +56,79 @@ pub struct Check {
     pub improvement_instructions: String,
     /// Why it could not be checked, or what was done after.
     pub note: String,
+    /// The picture as it was looked at ([`seen_mark`]): the same picture,
+    /// for the same words, is not looked at again.
+    pub seen: String,
+}
+
+/// Looks before a clip is paid for: the still a clip starts from is looked
+/// at against its words, and drawn again when it fails - a still costs
+/// cents, the clip made from a wrong one dollars.
+#[derive(Clone, PartialEq)]
+pub struct FrameCheck {
+    /// Who looks: the writer's key and model.
+    pub key: String,
+    /// The writer's model.
+    pub model: String,
+    /// The score a picture needs.
+    pub threshold: u8,
+    /// How many times a failing picture is drawn again.
+    pub attempts: u8,
+}
+
+impl std::fmt::Debug for FrameCheck {
+    /// Never the key: shots are logged.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FrameCheck")
+            .field("model", &self.model)
+            .field("threshold", &self.threshold)
+            .field("attempts", &self.attempts)
+            .finish()
+    }
+}
+
+/// What the picture in `file` is now, asked about with `ask`: its size,
+/// when it was written and the words, in one line. A check of the same
+/// mark is not asked for again: a run carried on after a stop looked at
+/// every picture once more, minutes of waiting and every look paid again
+/// (the owner, 26 Nov).
+pub fn seen_mark(file: &Path, ask: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let Ok(meta) = std::fs::metadata(file) else {
+        return String::new();
+    };
+    let written = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_millis());
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    ask.hash(&mut hasher);
+    format!("{}-{written}-{:x}", meta.len(), hasher.finish())
+}
+
+/// The picture in `file`, shot `stem`, looked at with the ask `ask`.
+pub fn look_file(
+    stem: &str,
+    file: &Path,
+    ask: &str,
+    key: &str,
+    model: &str,
+    threshold: u8,
+) -> Check {
+    let block = match picture_block(file) {
+        Ok(block) => block,
+        Err(why) => return Check::unchecked(stem, file, &why),
+    };
+    let mut check = match crate::writer::look_at(key, model, &check_tool(), ask, block) {
+        Ok(got) => Check::from_value(stem, file, &got, threshold),
+        Err(error) => Check::unchecked(stem, file, &format!("could not be looked at: {error}")),
+    };
+    if check.checked {
+        check.seen = seen_mark(file, ask);
+    }
+    check
 }
 
 impl Check {
@@ -106,6 +179,7 @@ impl Check {
                 .trim()
                 .to_owned(),
             note: String::new(),
+            seen: String::new(),
         }
     }
 
@@ -287,10 +361,11 @@ pub fn read_report(job: &crate::job::Job) -> Option<Report> {
     serde_json::from_slice(&bytes).ok()
 }
 
-/// Looks at every picture a model drew for `board` against its narration
-/// and draws again, with what was missing, each still that fails - up to
-/// `attempts` times, each a picture paid for at the run's prices. A clip
-/// that fails is said, not made again: a clip costs many stills. The
+/// Looks at every still a model drew for `board` against its narration
+/// and draws again, with what was missing, each one that fails - up to
+/// `attempts` times, each a picture paid for at the run's prices. A clip's
+/// picture is looked at before the clip is made instead ([`FrameCheck`]),
+/// and a still looked at before and unchanged is not looked at again. The
 /// prompts drawn again are kept in `board`, so a later remake starts from
 /// them. Stops between pictures when `stop` says to. The report is kept in
 /// the job's folder, and what was spent on redrawing is in it.
@@ -318,27 +393,72 @@ pub fn check_and_mend(
         ..Report::default()
     };
     let mut spent = 0.0;
+    // Stills only: a clip's picture is looked at before the clip is made
+    // (`FrameCheck`), when drawing it again still helps; looked at after,
+    // a failing one could only be said.
     let todo: Vec<(usize, usize, usize)> = drawn(board)
         .iter()
+        .filter(|(_, _, shot)| shot.kind == ShotKind::Image)
         .filter_map(|(scene, index, _)| {
             let (c, s) = board.position_of(&scene.id)?;
             Some((c, s, *index))
         })
         .collect();
-    let looked = look_all(
+    // What the last check found for a picture that has not changed since,
+    // for the same words, stands.
+    let before: Vec<Check> = read_report(job).map(|kept| kept.checks).unwrap_or_default();
+    let mut looked: Vec<Option<Check>> = todo
+        .iter()
+        .map(|&(c, s, index)| {
+            let scene = &board.chapters[c].scenes[s];
+            let stem = shot_stem(&scene.id, index);
+            let file = picture_of(job, scene, index)?;
+            let mark = seen_mark(
+                &file,
+                &check_prompt(scene, &scene.shots[index], &board.style.visual),
+            );
+            before
+                .iter()
+                .find(|check| {
+                    check.stem == stem && check.checked && !mark.is_empty() && check.seen == mark
+                })
+                .cloned()
+        })
+        .collect();
+    let fresh: Vec<(usize, usize, usize)> = todo
+        .iter()
+        .zip(&looked)
+        .filter(|(_, kept)| kept.is_none())
+        .map(|(at, _)| *at)
+        .collect();
+    let kept = todo.len() - fresh.len();
+    if kept > 0 {
+        log::info!("pictures: {kept} looked at before and unchanged, not looked at again");
+    }
+    // A picture whose check stands is not drawn again on a second run: it
+    // had its tries when it was looked at.
+    let reused: Vec<bool> = looked.iter().map(Option::is_some).collect();
+    let mut new = look_all(
         job,
         board,
-        &todo,
+        &fresh,
         key,
         model,
         threshold,
         &mut |n, of| progress(false, n, of),
         stop,
-    );
+    )
+    .into_iter();
+    for slot in looked.iter_mut().filter(|slot| slot.is_none()) {
+        *slot = new.next().flatten();
+    }
     // How many will be drawn again, to say which of them is.
     let failing = todo
         .iter()
         .zip(&looked)
+        .zip(&reused)
+        .filter(|(_, reused)| !**reused)
+        .map(|(pair, _)| pair)
         .filter(|((c, s, index), check)| {
             check
                 .as_ref()
@@ -348,14 +468,15 @@ pub fn check_and_mend(
         })
         .count();
     let mut redrawn = 0;
-    for ((c, s, index), check) in todo.into_iter().zip(looked) {
+    for (((c, s, index), check), reused) in todo.into_iter().zip(looked).zip(reused) {
         let Some(mut check) = check else {
             // Stopped before it was looked at.
             break;
         };
         let stem = shot_stem(&board.chapters[c].scenes[s].id, index);
         let mut tries = 0;
-        while check.checked
+        while !reused
+            && check.checked
             && !check.is_acceptable
             && tries < attempts
             && board.chapters[c].scenes[s].shots[index].kind == ShotKind::Image
@@ -490,20 +611,14 @@ fn look(
     let Some(file) = picture_of(job, scene, index) else {
         return Check::unchecked(&stem, Path::new(""), "no picture to look at");
     };
-    let block = match picture_block(&file) {
-        Ok(block) => block,
-        Err(why) => return Check::unchecked(&stem, &file, &why),
-    };
-    match crate::writer::look_at(
+    look_file(
+        &stem,
+        &file,
+        &check_prompt(scene, shot, &board.style.visual),
         key,
         model,
-        &check_tool(),
-        &check_prompt(scene, shot, &board.style.visual),
-        block,
-    ) {
-        Ok(got) => Check::from_value(&stem, &file, &got, threshold),
-        Err(error) => Check::unchecked(&stem, &file, &format!("could not be looked at: {error}")),
-    }
+        threshold,
+    )
 }
 
 #[cfg(test)]
@@ -538,6 +653,26 @@ mod tests {
         // Not looked at is never a pass.
         let unchecked = Check::unchecked("s1_0", Path::new("x.png"), "no key");
         assert!(!unchecked.checked && !unchecked.is_acceptable);
+    }
+
+    /// A picture is marked by what it is and the words it is judged by:
+    /// the same file and words, the same mark; the file rewritten or the
+    /// words changed, another; no file, none.
+    #[test]
+    fn a_picture_looked_at_is_known_again() {
+        let dir = std::env::temp_dir().join(format!("concat-seen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("s1_0.png");
+        std::fs::write(&file, b"one").unwrap();
+        let mark = seen_mark(&file, "the words");
+        assert!(!mark.is_empty());
+        assert_eq!(seen_mark(&file, "the words"), mark);
+        assert_ne!(seen_mark(&file, "other words"), mark);
+        std::fs::write(&file, b"another picture").unwrap();
+        assert_ne!(seen_mark(&file, "the words"), mark);
+        assert!(seen_mark(&dir.join("none.png"), "the words").is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A picture drawn again is told what was missing, what to avoid and
