@@ -99,6 +99,8 @@ slint = { version = "1.18", default-features = false, features = [
 ] }
 
 [target.'cfg(target_os = "android")'.dependencies]
+# libc for `_exit` as the app closes, past the C exit handlers (lib.rs).
+libc = "0.2"
 slint = { version = "1.18", default-features = false, features = [
     "std",
     "backend-android-activity-06",

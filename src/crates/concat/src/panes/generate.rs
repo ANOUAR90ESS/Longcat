@@ -4913,6 +4913,23 @@ fn shots_of(prefs: &crate::prefs::GeneratePrefs) -> Shots {
                 },
             }),
             replicate: prefs.replicate_token.clone(),
+            // A clip's picture looked at before the clip is paid for, with
+            // the writer's key, when the pictures are checked at all.
+            frame_check: prefs.picture_check.unwrap_or(false).then(|| {
+                let (key, model) = prefs.writer();
+                concat_generate::visual::FrameCheck {
+                    key,
+                    model,
+                    threshold: prefs
+                        .picture_threshold
+                        .unwrap_or(concat_generate::visual::DEFAULT_THRESHOLD)
+                        .min(10),
+                    attempts: prefs
+                        .picture_attempts
+                        .unwrap_or(concat_generate::visual::DEFAULT_ATTEMPTS)
+                        .min(3),
+                }
+            }),
         },
         2 => Shots::Folder,
         _ => Shots::Draft,

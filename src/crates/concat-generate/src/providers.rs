@@ -45,6 +45,9 @@ pub enum Shots {
         /// The Replicate token, when there is one: the music is made on
         /// Replicate. Empty for none.
         replicate: String,
+        /// The still a clip starts from looked at before the clip is
+        /// made, and drawn again when it fails; None not to look.
+        frame_check: Option<crate::visual::FrameCheck>,
     },
 }
 

@@ -716,6 +716,25 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## The picture check, and closing on Android (owner, 26 Nov)
+
+The owner's phone sat on "Checking picture 1 of 8" after every Create,
+and the log of the run before ended in a crash as the app closed.
+
+- done: the picture check looked at every picture again on each Create,
+  a run carried on after a stop included - the result was kept and never
+  read. A still looked at before, unchanged and for the same words
+  (`visual::seen_mark`), is not looked at again, nor drawn again.
+- done: it looked at the clips' pictures after the clips were made, when
+  a wrong one could only be said. A clip's picture is now looked at
+  before the clip is paid for (`visual::FrameCheck`), and drawn again
+  when it fails: a still costs cents, the clip made from it dollars.
+- done: on Android the app closing ran the C exit handlers under the
+  audio output's thread, logged as a crash ("pthread_mutex_lock called
+  on a destroyed mutex"); it leaves with `_exit` there, as on Linux.
+- next: "fails to put together": the log sent stopped at the check; a
+  log of a run that reaches "Cut on the timeline" says why.
+
 ## Each project its own Long video (owner, 22 Nov)
 
 The owner's phone showed a new project open on the last project's
