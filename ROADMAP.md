@@ -732,10 +732,15 @@ long. One pull request and one release for the four stages.
   four characters described once in full and named in every shot. The
   format sets three minutes, upright, 3D cartoon (photographs for a
   real-looking tale), a quarter of the shots moving.
-- B. **The same faces**: each character's portrait drawn first, every
-  shot that names them drawn from it ("this same character, face and
-  clothes only"), so the hero is the hero from the first picture to the
-  last.
+- B. **The same faces** - done. A tale's board is written with
+  `portraits`: before its shots, each character's portrait is drawn once
+  (whole, on a plain grey ground, in the film's style; kept in the job's
+  `characters/`), and every shot - still or a clip's picture - that names
+  a character is drawn from the first one it names
+  (`Pictures::from_character`: OpenAI's image edits, Gemini with the
+  picture; "keep the same face, hair, build, clothes ... not this
+  picture's pose"). Where the maker does not draw from a picture
+  (Replicate), or it fails, the shot is drawn from its words as before.
 - C. **Voices**: a narrator and a voice for each character who speaks.
 - D. **Joined up**: a channel of tales has its month planned as story
   ideas; checks; one release.

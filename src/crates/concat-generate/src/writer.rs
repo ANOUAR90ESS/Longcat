@@ -679,6 +679,7 @@ pub fn write(
 
     let mut board = Storyboard {
         chained: brief.format == VideoFormat::Build,
+        portraits: brief.format == VideoFormat::Tale,
         title: text(&outline["title"]),
         language: brief.language.clone(),
         aspect: brief.aspect.clone(),

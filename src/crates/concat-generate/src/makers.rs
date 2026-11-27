@@ -98,9 +98,42 @@ impl Pictures {
         match self {
             Pictures::Replicate { .. } => Err("Replicate's pictures are not edited".to_owned()),
             Pictures::OpenAi { key, model } => {
-                openai_edit(key, model, from, prompt, aspect, dir, stem)
+                openai_edit(key, model, from, &edit_prompt(prompt), aspect, dir, stem)
             }
-            Pictures::Gemini { key, model } => gemini_edit(key, model, from, prompt, dir, stem),
+            Pictures::Gemini { key, model } => {
+                gemini_edit(key, model, from, &edit_prompt(prompt), dir, stem)
+            }
+        }
+    }
+
+    /// A new picture of the character in `portrait`, as `prompt` says:
+    /// the same face, hair and clothes, in a scene of its own - so a tale's
+    /// hero is the same from the first picture to the last. Errs where the
+    /// maker takes no picture to draw from (Replicate).
+    pub fn from_character(
+        &self,
+        portrait: &Path,
+        prompt: &str,
+        aspect: &str,
+        dir: &Path,
+        stem: &str,
+    ) -> Result<PathBuf, String> {
+        match self {
+            Pictures::Replicate { .. } => {
+                Err("Replicate's pictures are not drawn from another".to_owned())
+            }
+            Pictures::OpenAi { key, model } => openai_edit(
+                key,
+                model,
+                portrait,
+                &character_prompt(prompt),
+                aspect,
+                dir,
+                stem,
+            ),
+            Pictures::Gemini { key, model } => {
+                gemini_edit(key, model, portrait, &character_prompt(prompt), dir, stem)
+            }
         }
     }
 }
@@ -364,6 +397,17 @@ fn openai_image(
 
 /// What an edit is told besides its prompt: the picture is the same
 /// object, kept, and only the change asked for is made.
+/// What a picture drawn from a character's portrait is told: who to keep,
+/// and that the portrait's pose and plain background are not the scene.
+fn character_prompt(prompt: &str) -> String {
+    format!(
+        "Use the character in this picture: keep the same face, hair, build, clothes, colours \
+         and drawing style exactly. Draw a new picture of them - not this picture's pose, \
+         framing or plain background: {}",
+        prompt.trim()
+    )
+}
+
 fn edit_prompt(prompt: &str) -> String {
     format!(
         "Keep this exact picture - the same object, background, floor, light, camera angle \
@@ -416,7 +460,6 @@ fn openai_edit(
         model.trim()
     };
     let bytes = std::fs::read(from).map_err(|error| format!("{}: {error}", from.display()))?;
-    let prompt = edit_prompt(prompt);
     let (boundary, body) = multipart(
         &[
             ("model", model),
@@ -481,7 +524,7 @@ fn gemini_edit(
                     "mimeType": mime,
                     "data": base64::engine::general_purpose::STANDARD.encode(bytes),
                 }},
-                {"text": edit_prompt(prompt)},
+                {"text": prompt},
             ]}],
             "generationConfig": {"responseModalities": ["IMAGE"]},
         }))
@@ -881,6 +924,16 @@ mod tests {
         assert_eq!(openai_size("1:1"), "1024x1024");
         assert_eq!(five_or_ten(4.0), 5);
         assert_eq!(five_or_ten(9.0), 10);
+    }
+
+    /// A picture drawn from a portrait keeps the character, not the
+    /// portrait's pose or ground, and ends on the scene asked for.
+    #[test]
+    fn a_character_is_drawn_again_not_its_portrait() {
+        let told = character_prompt(" Pip runs through the rain ");
+        assert!(told.contains("same face, hair, build, clothes"));
+        assert!(told.contains("not this picture's pose"));
+        assert!(told.ends_with(": Pip runs through the rain"));
     }
 
     /// An edit is sent as a form: every field and the picture, between

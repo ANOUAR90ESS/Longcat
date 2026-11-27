@@ -375,6 +375,77 @@ impl Job {
         self.dir.join("frames")
     }
 
+    /// Where a tale's character portraits are kept: drawn once, every shot
+    /// of the character drawn from theirs.
+    pub fn characters_dir(&self) -> PathBuf {
+        self.dir.join("characters")
+    }
+
+    /// The portrait of the character called `name`, once drawn.
+    pub fn portrait_of(&self, name: &str) -> Option<PathBuf> {
+        providers::existing(
+            &self.characters_dir(),
+            &portrait_stem(name),
+            &SHOT_EXTENSIONS,
+        )
+    }
+
+    /// The picture a tale's `shot` is drawn from: the portrait of the first
+    /// character it names, when the board draws from portraits.
+    fn portrait_for(&self, board: &Storyboard, shot: &Shot) -> Option<PathBuf> {
+        if !board.portraits {
+            return None;
+        }
+        board
+            .first_cast(shot)
+            .and_then(|one| self.portrait_of(&one.name))
+    }
+
+    /// Draws the portrait of each of a tale's characters not drawn yet,
+    /// one at a time, each a still at the run's price. One that cannot be
+    /// drawn is said and left: its shots are drawn from their words.
+    fn draw_portraits(
+        &self,
+        board: &Storyboard,
+        pictures: &crate::makers::Pictures,
+        prices: &Prices,
+        spend: &Spend,
+    ) -> Result<(), String> {
+        if !board.portraits {
+            return Ok(());
+        }
+        let dir = self.characters_dir();
+        for one in board
+            .style
+            .cast
+            .iter()
+            .filter(|one| !one.name.trim().is_empty())
+        {
+            if self.portrait_of(&one.name).is_some() {
+                continue;
+            }
+            std::fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+            spend.take(prices.still)?;
+            let prompt = board.portrait_prompt(one);
+            match providers::retry(|| {
+                pictures.make(&prompt, &board.aspect, &dir, &portrait_stem(&one.name))
+            }) {
+                Ok(_) => log::info!("tale: {}'s portrait drawn", one.name.trim()),
+                Err(error) => {
+                    spend.refund(prices.still);
+                    if error.starts_with(crate::cost::LIMIT_REACHED) {
+                        return Err(error);
+                    }
+                    log::warn!(
+                        "tale: {}'s portrait: {error}; drawn from words",
+                        one.name.trim()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The shots whose words changed since they were made, one stem a
     /// line: made again, as new takes, on the next run.
     pub fn stale_list(&self) -> PathBuf {
@@ -785,6 +856,9 @@ impl Job {
             }
         }
         if !queue.is_empty() {
+            if let Shots::Models { pictures, .. } = shots {
+                self.draw_portraits(board, pictures, prices, &spend)?;
+            }
             let batch = Batch {
                 board,
                 shots,
@@ -1439,6 +1513,7 @@ impl Job {
                             .as_deref()
                             .and_then(|stem| self.keyframe(stem));
                         order.look = queued.look.clone();
+                        order.portrait = self.portrait_for(batch.board, queued.shot);
                         let mut inputs = ready.clone();
                         let outcome = self.replicate_shot(
                             batch.shots,
@@ -1546,6 +1621,9 @@ struct Order<'a> {
     /// What a clip's picture is looked at against before the clip is
     /// made; empty not to look.
     look: String,
+    /// On a tale's board, the portrait of the character the shot names:
+    /// its picture is drawn from it.
+    portrait: Option<PathBuf>,
 }
 
 impl<'a> Order<'a> {
@@ -1567,6 +1645,7 @@ impl<'a> Order<'a> {
             stem,
             previous: None,
             look: String::new(),
+            portrait: None,
         }
     }
 }
@@ -1799,6 +1878,10 @@ impl Job {
                 let mut order =
                     Order::new(board, chapter, shot, shot_seconds(scene, shot), &dir, &take);
                 order.look = crate::visual::check_prompt(scene, shot, &board.style.visual);
+                if let Shots::Models { pictures, .. } = shots {
+                    self.draw_portraits(board, pictures, prices, spend)?;
+                }
+                order.portrait = self.portrait_for(board, shot);
                 let refused = match self.replicate_shot(shots, &order, inputs, prices, spend)? {
                     Outcome::Made => None,
                     Outcome::StillForClip(error) | Outcome::Failed(error) => Some(error),
@@ -1880,8 +1963,8 @@ impl Job {
             }
         }
         spend.take(prices.still)?;
-        let still = |prompt: &str| match &order.previous {
-            Some(previous) => edited(
+        let still = |prompt: &str| match (&order.previous, &order.portrait) {
+            (Some(previous), _) => edited(
                 pictures,
                 previous,
                 prompt,
@@ -1889,7 +1972,17 @@ impl Job {
                 order.dir,
                 order.stem,
             ),
-            None => providers::retry(|| pictures.make(prompt, order.aspect, order.dir, order.stem)),
+            (None, Some(portrait)) => drawn_from(
+                pictures,
+                portrait,
+                prompt,
+                order.aspect,
+                order.dir,
+                order.stem,
+            ),
+            (None, None) => {
+                providers::retry(|| pictures.make(prompt, order.aspect, order.dir, order.stem))
+            }
         };
         let image = match still(&order.prompt) {
             // Refused by the model's safety filter: asked once more, gently,
@@ -1945,6 +2038,43 @@ fn edited(
     }
 }
 
+/// A new picture of the character in `portrait`, as `prompt` says, saved
+/// as `dir`/`stem`; made from the words alone where the picture maker does
+/// not draw from a picture, or that fails, so a tale is never stopped by
+/// it.
+fn drawn_from(
+    pictures: &crate::makers::Pictures,
+    portrait: &Path,
+    prompt: &str,
+    aspect: &str,
+    dir: &Path,
+    stem: &str,
+) -> Result<PathBuf, String> {
+    match providers::retry(|| pictures.from_character(portrait, prompt, aspect, dir, stem)) {
+        Ok(made) => Ok(made),
+        Err(error) => {
+            log::warn!("{stem}: not drawn from its character's portrait ({error}); made anew");
+            providers::retry(|| pictures.make(prompt, aspect, dir, stem))
+        }
+    }
+}
+
+/// The file name, without extension, a character's portrait is kept as:
+/// their name in lower case, letters and digits only.
+fn portrait_stem(name: &str) -> String {
+    let stem: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    if stem.trim_matches('-').is_empty() {
+        "character".to_owned()
+    } else {
+        stem
+    }
+}
+
 /// One clip to make: what [`Job::clip`] is handed.
 struct Clip<'a> {
     pictures: &'a crate::makers::Pictures,
@@ -1967,8 +2097,8 @@ impl Job {
         }
         let draw = |prompt: &str| {
             spend.take(prices.still)?;
-            match &order.previous {
-                Some(previous) => edited(
+            match (&order.previous, &order.portrait) {
+                (Some(previous), _) => edited(
                     clip.pictures,
                     previous,
                     prompt,
@@ -1976,7 +2106,15 @@ impl Job {
                     &frames,
                     order.stem,
                 ),
-                None => providers::retry(|| {
+                (None, Some(portrait)) => drawn_from(
+                    clip.pictures,
+                    portrait,
+                    prompt,
+                    order.aspect,
+                    &frames,
+                    order.stem,
+                ),
+                (None, None) => providers::retry(|| {
                     clip.pictures
                         .make(prompt, order.aspect, &frames, order.stem)
                 }),
@@ -2142,6 +2280,24 @@ impl Job {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A character's portrait is kept under a plain file name, whatever
+    /// the name is written with; a portrait drawn is found again by name.
+    #[test]
+    fn a_portrait_is_kept_by_its_characters_name() {
+        assert_eq!(portrait_stem(" Pip "), "pip");
+        assert_eq!(portrait_stem("Mo Grey"), "mo-grey");
+        assert_eq!(portrait_stem("Señora Ruiz"), "señora-ruiz");
+        assert_eq!(portrait_stem("  ?! "), "character");
+        let project = std::env::temp_dir().join(format!("concat-portrait-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project);
+        let job = Job::new(&project, "tale");
+        assert!(job.portrait_of("Pip").is_none());
+        std::fs::create_dir_all(job.characters_dir()).unwrap();
+        std::fs::write(job.characters_dir().join("pip.png"), b"png").unwrap();
+        assert!(job.portrait_of("PIP").is_some());
+        let _ = std::fs::remove_dir_all(&project);
+    }
 
     /// The research is kept with the video, as JSON and as text with its
     /// sources; empty notes take both away.
