@@ -930,6 +930,288 @@ pub fn elevenlabs(
     Ok(words_of(&answer["alignment"]))
 }
 
+/// One of the account's ElevenLabs voices, as its list describes it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VoiceInfo {
+    /// What a request names it by.
+    pub id: String,
+    /// What it is called.
+    pub name: String,
+    /// "male", "female", or empty.
+    pub gender: String,
+    /// "young", "middle_aged", "old", or empty.
+    pub age: String,
+}
+
+/// The voices the ElevenLabs account `key` can read with: its own and the
+/// library's defaults.
+pub fn elevenlabs_voices(key: &str) -> Result<Vec<VoiceInfo>, String> {
+    if key.trim().is_empty() {
+        return Err("ElevenLabs needs an API key".to_owned());
+    }
+    let answer: Value = agent()
+        .get("https://api.elevenlabs.io/v1/voices")
+        .set("xi-api-key", key.trim())
+        .call()
+        .map_err(|error| refused("ElevenLabs", error))?
+        .into_json()
+        .map_err(|error| format!("ElevenLabs: {error}"))?;
+    Ok(voices_of(&answer))
+}
+
+/// The voices in ElevenLabs' answer to the list of voices.
+pub fn voices_of(answer: &Value) -> Vec<VoiceInfo> {
+    let text = |value: &Value| value.as_str().unwrap_or_default().trim().to_lowercase();
+    answer["voices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|voice| {
+            let id = voice["voice_id"].as_str()?.trim().to_owned();
+            (!id.is_empty()).then(|| VoiceInfo {
+                id,
+                name: voice["name"].as_str().unwrap_or_default().trim().to_owned(),
+                gender: text(&voice["labels"]["gender"]),
+                age: text(&voice["labels"]["age"]).replace(' ', "_"),
+            })
+        })
+        .collect()
+}
+
+/// A voice for each of a tale's characters, `(name, look)`, from
+/// `voices`, never the narrator's: a woman's for a woman, a young one for
+/// a child, an old one for the old, and a different voice for each while
+/// there are enough. A character whose look says neither gets the next
+/// voice not taken. None when there are no voices.
+pub fn pick_voices(
+    cast: &[(String, String)],
+    voices: &[VoiceInfo],
+    narrator: &str,
+) -> Vec<(String, String)> {
+    const FEMALE: [&str; 14] = [
+        "girl",
+        "woman",
+        "she",
+        "her",
+        "lady",
+        "mother",
+        "mum",
+        "mom",
+        "grandmother",
+        "granny",
+        "queen",
+        "princess",
+        "aunt",
+        "sister",
+    ];
+    const MALE: [&str; 14] = [
+        "boy",
+        "man",
+        "he",
+        "his",
+        "gentleman",
+        "father",
+        "dad",
+        "grandfather",
+        "grandpa",
+        "king",
+        "prince",
+        "uncle",
+        "brother",
+        "son",
+    ];
+    const YOUNG: [&str; 8] = [
+        "girl", "boy", "child", "kid", "little", "young", "baby", "teenage",
+    ];
+    const OLD: [&str; 6] = [
+        "old",
+        "elderly",
+        "grandmother",
+        "grandfather",
+        "granny",
+        "grandpa",
+    ];
+    let free: Vec<&VoiceInfo> = voices
+        .iter()
+        .filter(|voice| voice.id != narrator.trim())
+        .collect();
+    if free.is_empty() {
+        return Vec::new();
+    }
+    let mut taken: Vec<&str> = Vec::new();
+    cast.iter()
+        .filter(|(name, _)| !name.trim().is_empty())
+        .map(|(name, look)| {
+            let words: Vec<String> = look
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .map(str::to_owned)
+                .collect();
+            let has = |list: &[&str]| words.iter().any(|word| list.contains(&word.as_str()));
+            let gender = match (has(&FEMALE), has(&MALE)) {
+                (true, false) => "female",
+                (false, true) => "male",
+                _ => "",
+            };
+            let age = if has(&YOUNG) {
+                "young"
+            } else if has(&OLD) {
+                "old"
+            } else {
+                ""
+            };
+            let score = |voice: &VoiceInfo| {
+                let mut score = 0;
+                if !gender.is_empty() && voice.gender == gender {
+                    score += 4;
+                } else if !gender.is_empty() && !voice.gender.is_empty() {
+                    score -= 4;
+                }
+                if !age.is_empty() && voice.age == age {
+                    score += 2;
+                }
+                if !taken.contains(&voice.id.as_str()) {
+                    score += 3;
+                }
+                score
+            };
+            let best = free
+                .iter()
+                .copied()
+                .enumerate()
+                .max_by_key(|(at, voice)| (score(voice), std::cmp::Reverse(*at)))
+                .map(|(_, voice)| voice)
+                .expect("free is not empty");
+            taken.push(&best.id);
+            (name.trim().to_owned(), best.id.clone())
+        })
+        .collect()
+}
+
+/// A scene's narration in the parts its voices read: the narrator's, and
+/// each line in quotation marks spoken by the character named in the
+/// sentence around it - after the line ("...", said Pip), else before it
+/// (Pip said, "...") - or by the narrator when none is. Parts of the same
+/// voice running on are one; the quotation marks are not read.
+pub fn dialogue_parts(text: &str, names: &[String]) -> Vec<(Option<String>, String)> {
+    let named = |around: &str| -> Option<String> {
+        let words: Vec<String> = around
+            .to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_owned)
+            .collect();
+        names
+            .iter()
+            .find(|name| {
+                let name = name.trim().to_lowercase();
+                !name.is_empty() && words.contains(&name)
+            })
+            .cloned()
+    };
+    let chars: Vec<char> = text.chars().collect();
+    let opens = |c: char| matches!(c, '"' | '\u{201c}' | '\u{ab}');
+    let closes = |open: char, c: char| match open {
+        '\u{201c}' => c == '\u{201d}',
+        '\u{ab}' => c == '\u{bb}',
+        _ => c == '"',
+    };
+    // Each quoted line: where it opens and closes.
+    let mut quotes: Vec<(usize, usize)> = Vec::new();
+    let mut at = 0;
+    while at < chars.len() {
+        if opens(chars[at])
+            && let Some(end) = (at + 1..chars.len()).find(|&j| closes(chars[at], chars[j]))
+        {
+            quotes.push((at, end));
+            at = end + 1;
+            continue;
+        }
+        at += 1;
+    }
+    let ends_sentence = |c: char| matches!(c, '.' | '!' | '?' | '\n');
+    let slice = |from: usize, to: usize| chars[from..to].iter().collect::<String>();
+    let mut parts: Vec<(Option<String>, String)> = Vec::new();
+    let mut push = |who: Option<String>, said: String| {
+        let said = said.trim().to_owned();
+        if said.is_empty() || said.chars().all(|c| !c.is_alphanumeric()) {
+            return;
+        }
+        match parts.last_mut() {
+            Some((last, kept)) if *last == who => {
+                kept.push(' ');
+                kept.push_str(&said);
+            }
+            _ => parts.push((who, said)),
+        }
+    };
+    let mut from = 0;
+    for (index, &(open, close)) in quotes.iter().enumerate() {
+        push(None, slice(from, open));
+        // The sentence after the line, up to the next line or its end.
+        let next_open = quotes.get(index + 1).map_or(chars.len(), |&(next, _)| next);
+        let after_end = (close + 1..next_open)
+            .find(|&j| ends_sentence(chars[j]))
+            .map_or(next_open, |j| j + 1);
+        let before_start = (from..open)
+            .rev()
+            .find(|&j| ends_sentence(chars[j]))
+            .map_or(from, |j| j + 1);
+        let who = named(&slice(close + 1, after_end)).or_else(|| named(&slice(before_start, open)));
+        push(who, slice(open + 1, close));
+        from = close + 1;
+    }
+    push(None, slice(from, chars.len()));
+    parts
+}
+
+/// Seconds an ElevenLabs MP3 of `bytes` lasts: it is read at a constant
+/// 128 kbit/s.
+fn mp3_seconds(bytes: usize) -> f64 {
+    bytes as f64 * 8.0 / 128_000.0
+}
+
+/// One scene read in several voices: each of `parts`, `(voice, text)`,
+/// read in turn and joined into one MP3 at `out`, its words timed from
+/// the start of the whole.
+pub fn elevenlabs_parts(
+    key: &str,
+    model: &str,
+    parts: &[(String, String)],
+    out: &Path,
+) -> Result<Vec<Word>, String> {
+    let mut audio: Vec<u8> = Vec::new();
+    let mut words: Vec<Word> = Vec::new();
+    for (n, (voice, text)) in parts.iter().enumerate() {
+        let piece = out.with_extension(format!("part{n}.mp3"));
+        let before = n
+            .checked_sub(1)
+            .and_then(|n| parts.get(n))
+            .map_or("", |part| part.1.as_str());
+        let after = parts.get(n + 1).map_or("", |part| part.1.as_str());
+        let read = elevenlabs(key, voice, model, text, before, after, &piece);
+        let bytes = read.as_ref().ok().and_then(|_| std::fs::read(&piece).ok());
+        let _ = std::fs::remove_file(&piece);
+        let (read, bytes) = match (read, bytes) {
+            (Ok(read), Some(bytes)) => (read, bytes),
+            (Err(error), _) => return Err(error),
+            (Ok(_), None) => return Err(format!("{}: not saved", piece.display())),
+        };
+        let offset = mp3_seconds(audio.len());
+        words.extend(read.into_iter().map(|word| Word {
+            start: word.start + offset,
+            end: word.end + offset,
+            ..word
+        }));
+        audio.extend_from_slice(&bytes);
+    }
+    let partial = out.with_extension("partial");
+    std::fs::write(&partial, audio).map_err(|error| format!("{}: {error}", partial.display()))?;
+    std::fs::rename(&partial, out).map_err(|error| format!("{}: {error}", out.display()))?;
+    Ok(words)
+}
+
 /// The words of an ElevenLabs alignment - each character with when it
 /// starts and ends - with when each is said: a word runs from its first
 /// character's start to its last's end, and ends at a space.
@@ -994,6 +1276,81 @@ fn save(response: ureq::Response, out: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tale's lines are read by the character named around them, after
+    /// or before; a line nobody is named for, and the rest, by the narrator.
+    #[test]
+    fn each_line_is_read_by_its_character() {
+        let names = vec!["Pip".to_owned(), "Mo".to_owned()];
+        let parts = dialogue_parts(
+            "The rain fell. \"Wait!\" said Pip. Mo said, \u{201c}Never.\u{201d} \"Who's there?\"",
+            &names,
+        );
+        assert_eq!(
+            parts,
+            vec![
+                (None, "The rain fell.".to_owned()),
+                (Some("Pip".to_owned()), "Wait!".to_owned()),
+                (None, "said Pip. Mo said,".to_owned()),
+                (Some("Mo".to_owned()), "Never.".to_owned()),
+                (None, "Who's there?".to_owned()),
+            ]
+        );
+        // Spanish quotation marks; nobody named, one narrator part.
+        let es = dialogue_parts("\u{ab}\u{a1}Corre!\u{bb}, grit\u{f3} Pip.", &names);
+        assert_eq!(es[0], (Some("Pip".to_owned()), "\u{a1}Corre!".to_owned()));
+        assert_eq!(
+            dialogue_parts("No one spoke.", &names),
+            vec![(None, "No one spoke.".to_owned())]
+        );
+    }
+
+    /// A voice by how a character looks: a girl's for a girl, an old man's
+    /// for an old man, never the narrator's, a new one for each while there
+    /// are enough.
+    #[test]
+    fn each_character_gets_a_voice_of_their_own() {
+        let voice = |id: &str, gender: &str, age: &str| VoiceInfo {
+            id: id.into(),
+            name: id.into(),
+            gender: gender.into(),
+            age: age.into(),
+        };
+        let voices = vec![
+            voice("narrator", "male", "middle_aged"),
+            voice("man", "male", "middle_aged"),
+            voice("girl", "female", "young"),
+            voice("old", "male", "old"),
+            voice("woman", "female", "middle_aged"),
+        ];
+        let cast = vec![
+            (
+                "Lia".to_owned(),
+                "a little girl of seven in a yellow coat".to_owned(),
+            ),
+            ("Abu".to_owned(), "an old man with a white beard".to_owned()),
+            ("Pip".to_owned(), "a small round robot".to_owned()),
+        ];
+        let picked = pick_voices(&cast, &voices, "narrator");
+        assert_eq!(picked[0], ("Lia".to_owned(), "girl".to_owned()));
+        assert_eq!(picked[1], ("Abu".to_owned(), "old".to_owned()));
+        assert_eq!(picked[2], ("Pip".to_owned(), "man".to_owned()));
+        assert!(picked.iter().all(|(_, id)| id != "narrator"));
+        assert!(pick_voices(&cast, &[voice("narrator", "", "")], "narrator").is_empty());
+        let listed = voices_of(&json!({"voices": [
+            {"voice_id": "abc", "name": "Rachel", "labels": {"gender": "Female", "age": "middle aged"}},
+            {"voice_id": "", "name": "none"}
+        ]}));
+        assert_eq!(
+            listed,
+            vec![VoiceInfo {
+                id: "abc".into(),
+                name: "Rachel".into(),
+                gender: "female".into(),
+                age: "middle_aged".into(),
+            }]
+        );
+    }
 
     /// A pronunciation list is read from what was typed, and a listed word
     /// is written as it is said wherever it stands whole - vowel marks,

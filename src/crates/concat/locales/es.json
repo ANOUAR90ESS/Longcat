@@ -295,6 +295,8 @@
   "generate.formatLessonHint": "Tres minutos, horizontal. Un concepto a partir de una pregunta cotidiana, una sola analogía de principio a fin, dibujado mientras se explica, y tres cosas para recordar al final.",
   "generate.formatBuild": "¿Qué estamos construyendo?",
   "generate.formatBuildHint": "Escribe solo el nombre de una máquina: un submarino, una afeitadora. Tres minutos, en vertical: se construye desde un objeto cotidiano, un problema y una pieza cada vez, cada toma un clip del mismo objeto creciendo, y su nombre se guarda hasta el final.",
+  "generate.formatTale": "Un cuento",
+  "generate.formatTaleHint": "Escribe la idea de una historia en una línea: un robot solitario encuentra un gato bajo la lluvia. Un cuento inventado con personajes que se ven iguales en cada imagen: para niños cuando el público es principiante, para adultos si no. Tres minutos, vertical, en dibujos 3D; elige fotografías para uno realista. La duración y el formato puedes cambiarlos.",
   "generate.formatMinute": "Explicado en un minuto",
   "generate.formatMinuteHint": "Un minuto, vertical, para Shorts, Reels y TikTok. Empieza con una situación o una pregunta, responde en pocas frases cortas con los mismos dos personajes en cada imagen y termina con una pregunta al espectador.",
   "generate.formatStory": "Historia documental",

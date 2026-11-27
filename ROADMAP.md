@@ -716,6 +716,48 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## "A tale": made-up stories (owner, 27 Nov)
+
+For a friend who makes stories, cartoon or real-looking, for children
+and for grown-ups, in English and Spanish, short and upright as well as
+long. One pull request and one release for the four stages.
+
+- A. **The writing** - done. A format, "A tale" (`VideoFormat::Tale`):
+  the topic is the idea in a line. Fiction, so nothing is read up on
+  unless a source is given. For beginners it is a children's tale (four
+  to nine: short sentences, gentle suspense, a kind ending); for anyone
+  else, for teenagers and adults. A hook, a want, a trouble, failed
+  tries, a turn, the climax and an ending that answers the opening; a
+  narrator in the past tense with the characters' lines quoted; one to
+  four characters described once in full and named in every shot. The
+  format sets three minutes, upright, 3D cartoon (photographs for a
+  real-looking tale), a quarter of the shots moving.
+- B. **The same faces** - done. A tale's board is written with
+  `portraits`: before its shots, each character's portrait is drawn once
+  (whole, on a plain grey ground, in the film's style; kept in the job's
+  `characters/`), and every shot - still or a clip's picture - that names
+  a character is drawn from the first one it names
+  (`Pictures::from_character`: OpenAI's image edits, Gemini with the
+  picture; "keep the same face, hair, build, clothes ... not this
+  picture's pose"). Where the maker does not draw from a picture
+  (Replicate), or it fails, the shot is drawn from its words as before.
+- C. **Voices** - done. With ElevenLabs, each of a tale's characters is
+  given a voice from the account's voices by how they look - a girl's for
+  a girl, an old man's for an old man, never the narrator's, a different
+  one each while there are enough (`providers::pick_voices`) - picked
+  once and kept with the job (`cast-voices.json`). A scene's lines in
+  quotation marks are read by the character named around them ('"Wait!"
+  said Pip'), the rest by the narrator (`providers::dialogue_parts`); the
+  parts are read one after another and joined into the scene's narration,
+  its words timed from the start (`providers::elevenlabs_parts`). The
+  writer quotes every line, in Spanish too, never with dashes.
+- D. **Joined up** - done. A channel whose format is "A tale" has its
+  month planned as tales: each title the story's idea in a line, its
+  angle the feeling or turn worth watching, adventure, funny, warm and
+  mysterious mixed (`calendar::Kind::Tales`). A plan made for another
+  kind of format says so and is planned again before any of it is made,
+  as for machines. One release for the four stages.
+
 ## The picture check, and closing on Android (owner, 26 Nov)
 
 The owner's phone sat on "Checking picture 1 of 8" after every Create,

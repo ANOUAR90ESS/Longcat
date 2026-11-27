@@ -2917,13 +2917,13 @@ impl GeneratePane {
         let language = LANGUAGES[prefs.language.min(LANGUAGES.len() - 1)];
         let made: Vec<String> = prefs.made_before().to_vec();
         let per_week = calendar::PER_WEEK[per_week_row(&prefs)];
-        // A channel that makes "What are we building?" plans machines to
-        // build, by their names: the topic that format takes.
-        let machines = builds(&prefs);
+        // A channel plans what its format takes as a topic: machines to
+        // build by their names, tales by their idea in a line.
+        let kind = plan_kind(&prefs);
         self.begin(t("generate.planBusy"));
         self.phase = 0;
         spawn_in_project(
-            move || calendar::plan(&channel, language, &made, per_week, machines, &key, &model),
+            move || calendar::plan(&channel, language, &made, per_week, kind, &key, &model),
             |studio, _, _, result| {
                 studio.handle(Msg::Generate(GenerateMsg::Planned(Box::new(result))))
             },
@@ -4455,6 +4455,18 @@ fn format_look(format: VideoFormat) -> Option<FormatLook> {
             caption_look: 1,
             clips: CLIP_SHARES.len() - 1,
         }),
+        // A tale: three minutes, upright, told as a story, in 3D cartoon
+        // (photographs for a real-looking one), a quarter of its shots
+        // moving; length, shape and look all the person's to change.
+        VideoFormat::Tale => Some(FormatLook {
+            minutes: 1,
+            aspect: 1,
+            content_style: 3,
+            level: 1,
+            pictures: 3,
+            caption_look: 1,
+            clips: 1,
+        }),
     }
 }
 
@@ -5176,6 +5188,22 @@ fn hashtags(tags: &[String]) -> String {
         .join(" ")
 }
 
+/// Whether the format chosen is "A tale".
+fn tells(prefs: &crate::prefs::GeneratePrefs) -> bool {
+    VideoFormat::ALL[prefs.format.min(VideoFormat::ALL.len() - 1)] == VideoFormat::Tale
+}
+
+/// What a channel's plan is made of, as its format is.
+fn plan_kind(prefs: &crate::prefs::GeneratePrefs) -> calendar::Kind {
+    if builds(prefs) {
+        calendar::Kind::Machines
+    } else if tells(prefs) {
+        calendar::Kind::Tales
+    } else {
+        calendar::Kind::Videos
+    }
+}
+
 /// Whether the format chosen is "What are we building?".
 fn builds(prefs: &crate::prefs::GeneratePrefs) -> bool {
     VideoFormat::ALL[prefs.format.min(VideoFormat::ALL.len() - 1)] == VideoFormat::Build
@@ -5184,8 +5212,10 @@ fn builds(prefs: &crate::prefs::GeneratePrefs) -> bool {
 /// Whether the channel's plan was made for another kind of format than
 /// the one chosen: machines to build for any other, or the other way.
 fn plan_stale(calendar: Option<&calendar::Calendar>, prefs: &crate::prefs::GeneratePrefs) -> bool {
-    calendar
-        .is_some_and(|calendar| !calendar.entries.is_empty() && calendar.machines != builds(prefs))
+    calendar.is_some_and(|calendar| {
+        !calendar.entries.is_empty()
+            && (calendar.machines, calendar.tales) != (builds(prefs), tells(prefs))
+    })
 }
 
 /// Whether a series is saved under the ready channel's name.

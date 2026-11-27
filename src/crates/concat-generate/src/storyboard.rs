@@ -66,6 +66,11 @@ pub struct Storyboard {
     /// and each clip runs from the shot before's picture to its own.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub chained: bool,
+    /// Written as a tale: each recurring character's portrait is drawn
+    /// first, and every shot that names one is drawn from it, so they look
+    /// the same from the first picture to the last.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub portraits: bool,
 }
 
 /// A page the writer's research read.
@@ -508,6 +513,31 @@ impl Storyboard {
         parts.join(". ")
     }
 
+    /// The first recurring character `shot` names: the one whose portrait
+    /// its picture is drawn from.
+    pub fn first_cast(&self, shot: &Shot) -> Option<&Character> {
+        self.style
+            .cast
+            .iter()
+            .filter(|one| !one.name.trim().is_empty())
+            .find(|one| names(&shot.prompt, &one.name))
+    }
+
+    /// What a character's portrait is drawn from: how they look, whole and
+    /// clear on a plain ground, in the film's style.
+    pub fn portrait_prompt(&self, one: &Character) -> String {
+        let mut prompt = format!(
+            "{}: {}. A full-length character portrait: standing, facing the camera, the \
+             whole figure in frame, a plain light grey background, soft even light, no text",
+            one.name.trim(),
+            one.look.trim().trim_end_matches('.')
+        );
+        if !self.style.visual.trim().is_empty() {
+            prompt += &format!(". {}", self.style.visual.trim().trim_end_matches('.'));
+        }
+        prompt
+    }
+
     /// The video prompt: the picture, how it moves, then the look.
     pub fn video_prompt(&self, chapter: &Chapter, shot: &Shot) -> String {
         let motion = shot.motion.trim().trim_end_matches('.');
@@ -652,6 +682,43 @@ mod tests {
         assert!(read.chained);
         let old: Storyboard = serde_json::from_str("{\"title\":\"x\"}").unwrap();
         assert!(!old.chained);
+    }
+
+    /// A tale's shot is drawn from the first character it names; a shot
+    /// naming none has no portrait; a portrait is the character whole, on a
+    /// plain ground, in the film's style.
+    #[test]
+    fn a_tale_draws_its_characters_from_their_portraits() {
+        let mut board = board();
+        board.portraits = true;
+        board.style.visual = "3D cartoon".into();
+        board.style.cast = vec![
+            Character {
+                name: "Pip".into(),
+                look: "a small round robot, blue paint, one antenna.".into(),
+            },
+            Character {
+                name: "Mo".into(),
+                look: "a grey cat with a white chest".into(),
+            },
+        ];
+        let mut shot = board.chapters[0].scenes[0].shots[0].clone();
+        shot.prompt = "Mo watches Pip from a rainy windowsill".into();
+        assert_eq!(
+            board.first_cast(&shot).map(|one| one.name.as_str()),
+            Some("Pip")
+        );
+        shot.prompt = "an empty street at night".into();
+        assert!(board.first_cast(&shot).is_none());
+        let portrait = board.portrait_prompt(&board.style.cast[0]);
+        assert!(portrait.starts_with("Pip: a small round robot, blue paint, one antenna. "));
+        assert!(portrait.contains("plain light grey background"));
+        assert!(portrait.ends_with("3D cartoon"));
+        assert!(
+            serde_json::to_string(&board)
+                .unwrap()
+                .contains("\"portraits\":true")
+        );
     }
 
     /// A recurring character a shot names is described in its prompt as
