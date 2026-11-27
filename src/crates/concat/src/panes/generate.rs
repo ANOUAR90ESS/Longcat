@@ -4455,6 +4455,18 @@ fn format_look(format: VideoFormat) -> Option<FormatLook> {
             caption_look: 1,
             clips: CLIP_SHARES.len() - 1,
         }),
+        // A tale: three minutes, upright, told as a story, in 3D cartoon
+        // (photographs for a real-looking one), a quarter of its shots
+        // moving; length, shape and look all the person's to change.
+        VideoFormat::Tale => Some(FormatLook {
+            minutes: 1,
+            aspect: 1,
+            content_style: 3,
+            level: 1,
+            pictures: 3,
+            caption_look: 1,
+            clips: 1,
+        }),
     }
 }
 

@@ -716,6 +716,30 @@ Added (`concat-generate::visual`, the writer's picture rules):
   its check.
 - Later: let the person set the threshold and attempts in the sheet.
 
+## "A tale": made-up stories (owner, 27 Nov)
+
+For a friend who makes stories, cartoon or real-looking, for children
+and for grown-ups, in English and Spanish, short and upright as well as
+long. One pull request and one release for the four stages.
+
+- A. **The writing** - done. A format, "A tale" (`VideoFormat::Tale`):
+  the topic is the idea in a line. Fiction, so nothing is read up on
+  unless a source is given. For beginners it is a children's tale (four
+  to nine: short sentences, gentle suspense, a kind ending); for anyone
+  else, for teenagers and adults. A hook, a want, a trouble, failed
+  tries, a turn, the climax and an ending that answers the opening; a
+  narrator in the past tense with the characters' lines quoted; one to
+  four characters described once in full and named in every shot. The
+  format sets three minutes, upright, 3D cartoon (photographs for a
+  real-looking tale), a quarter of the shots moving.
+- B. **The same faces**: each character's portrait drawn first, every
+  shot that names them drawn from it ("this same character, face and
+  clothes only"), so the hero is the hero from the first picture to the
+  last.
+- C. **Voices**: a narrator and a voice for each character who speaks.
+- D. **Joined up**: a channel of tales has its month planned as story
+  ideas; checks; one release.
+
 ## The picture check, and closing on Android (owner, 26 Nov)
 
 The owner's phone sat on "Checking picture 1 of 8" after every Create,

@@ -216,16 +216,21 @@ pub enum VideoFormat {
     /// thing, one problem and one part at a time, its name kept back
     /// until the end - the topic is only the machine's name.
     Build,
+    /// A made-up tale, for children or for grown-ups as the audience is:
+    /// characters who look the same in every picture, a want, a trouble, a
+    /// turn and an ending - the topic is the idea in a line.
+    Tale,
 }
 
 impl VideoFormat {
     /// In the sheet's order.
-    pub const ALL: [VideoFormat; 5] = [
+    pub const ALL: [VideoFormat; 6] = [
         VideoFormat::Custom,
         VideoFormat::Minute,
         VideoFormat::Story,
         VideoFormat::Lesson,
         VideoFormat::Build,
+        VideoFormat::Tale,
     ];
 
     /// What the writer is told of the format; nothing for none.
@@ -322,6 +327,42 @@ impl VideoFormat {
                  whose motion is the new part arriving and fitting into place, or the \
                  problem happening (water rushing in, the frame spinning). The last shot is \
                  the finished machine as it looks in real life."
+            }
+            VideoFormat::Tale => {
+                "FORMAT - A TALE. The topic is the idea of a made-up story in a line ('a \
+                 lonely robot finds a cat in the rain'). It is fiction: invent freely, never \
+                 present it as true, and never put a real, living person in it.\n\
+                 - Who it is for decides how it is told. For complete beginners, it is a tale \
+                 for children of four to nine: short sentences, warm and clear, gentle \
+                 suspense, no violence, no fear that lasts, a kind ending and a small lesson \
+                 shown, never preached. For anyone else, it is for teenagers and adults: \
+                 real stakes, wit, feeling, an ending that turns or lingers - still nothing \
+                 graphic.\n\
+                 - The shape: the first scene drops the viewer into the hero's world and what \
+                 they want, in one or two sentences, with a hook that makes them stay ('Pip \
+                 had fixed every robot in the city - except the lonely one.'). Then the \
+                 trouble that stands in the way; two or three tries that fail and cost \
+                 something; a turn where the hero learns or chooses something; the climax; \
+                 and an ending that answers the opening. In a short video those are beats of \
+                 a scene or two each; in a long one, chapters.\n\
+                 - Told by a narrator, in the past tense, with the characters' own words in \
+                 quotation marks where they speak - a line or two at a time, each named \
+                 ('\"Wait!\" said Pip.'). Sentences of at most fifteen words. Never 'in this \
+                 video', never a greeting.\n\
+                 - One to three recurring characters, at most four, each described once in \
+                 full - age, build, face, hair, clothes and their colours, one thing they \
+                 always carry - and named in every shot they are in, so each looks the same \
+                 from the first picture to the last. Give them simple names easy to say in \
+                 the narration's language.\n\
+                 - Every shot is a moment of the story with the characters doing something - \
+                 never posing, never a title card: what they do, where, the light and the \
+                 feeling, framed as a film would (a wide shot to open a place, close on a \
+                 face for a feeling). The same places look the same each time they come \
+                 back. Clips for the moments that move: a chase, a fall, a door opening.\n\
+                 - No statistics, no sources, no animated cards of figures: it is a story. \
+                 Stickers only for a sound word a child would love (BOOM!, Splash!) or none. \
+                 The last scene ends the tale; then, in a short separate line, a question to \
+                 the viewer that invites a comment."
             }
         }
     }
@@ -559,7 +600,11 @@ pub fn write(
     let mut sources = Vec::new();
     let found = match &brief.researched {
         Some(ready) if !ready.notes.trim().is_empty() => Some(ready.clone()),
-        _ if brief.research || !brief.source.trim().is_empty() => {
+        // A tale is made up: nothing to read up on, unless a source is
+        // given to tell it from.
+        _ if (brief.research && brief.format != VideoFormat::Tale)
+            || !brief.source.trim().is_empty() =>
+        {
             progress(Writing::Research);
             research(brief, key, model)
                 // Written from what the writer knows, as before: the
@@ -3611,6 +3656,7 @@ mod tests {
             VideoFormat::Story,
             VideoFormat::Lesson,
             VideoFormat::Build,
+            VideoFormat::Tale,
         ] {
             let brief = Brief {
                 format,

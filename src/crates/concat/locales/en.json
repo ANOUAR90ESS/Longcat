@@ -295,6 +295,8 @@
   "generate.formatLessonHint": "Three minutes, wide. One concept from an everyday question, one analogy carried through, drawn as it is explained, three things to remember at the end.",
   "generate.formatBuild": "What are we building?",
   "generate.formatBuildHint": "Type only a machine's name - a submarine, an electric razor. Three minutes, upright: it is built from an everyday object, one problem and one part at a time, every shot a clip of the same object growing, and its name kept back until the end.",
+  "generate.formatTale": "A tale",
+  "generate.formatTaleHint": "Type the idea of a story in a line - a lonely robot finds a cat in the rain. A made-up tale with characters who look the same in every picture: for children when the audience is beginners, for grown-ups otherwise. Three minutes, upright, in 3D cartoon - choose photographs for a real-looking one; length and shape are yours to change.",
   "generate.formatMinute": "Explained in a minute",
   "generate.formatMinuteHint": "One minute, upright, for Shorts, Reels and TikTok. Opens on a situation or a question, answers in a few short beats with the same two characters in every picture, ends on a question to the viewer.",
   "generate.formatStory": "Documentary story",
