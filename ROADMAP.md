@@ -741,7 +741,16 @@ long. One pull request and one release for the four stages.
   picture; "keep the same face, hair, build, clothes ... not this
   picture's pose"). Where the maker does not draw from a picture
   (Replicate), or it fails, the shot is drawn from its words as before.
-- C. **Voices**: a narrator and a voice for each character who speaks.
+- C. **Voices** - done. With ElevenLabs, each of a tale's characters is
+  given a voice from the account's voices by how they look - a girl's for
+  a girl, an old man's for an old man, never the narrator's, a different
+  one each while there are enough (`providers::pick_voices`) - picked
+  once and kept with the job (`cast-voices.json`). A scene's lines in
+  quotation marks are read by the character named around them ('"Wait!"
+  said Pip'), the rest by the narrator (`providers::dialogue_parts`); the
+  parts are read one after another and joined into the scene's narration,
+  its words timed from the start (`providers::elevenlabs_parts`). The
+  writer quotes every line, in Spanish too, never with dashes.
 - D. **Joined up**: a channel of tales has its month planned as story
   ideas; checks; one release.
 

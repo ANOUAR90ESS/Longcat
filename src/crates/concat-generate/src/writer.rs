@@ -347,7 +347,9 @@ impl VideoFormat {
                  a scene or two each; in a long one, chapters.\n\
                  - Told by a narrator, in the past tense, with the characters' own words in \
                  quotation marks where they speak - a line or two at a time, each named \
-                 ('\"Wait!\" said Pip.'). Sentences of at most fifteen words. Never 'in this \
+                 ('\"Wait!\" said Pip.') - in quotation marks in Spanish too, never dashes - so each line \
+                 is spoken in its character's own voice. Sentences of at most fifteen words. \
+                 Never 'in this \
                  video', never a greeting.\n\
                  - One to three recurring characters, at most four, each described once in \
                  full - age, build, face, hair, clothes and their colours, one thing they \

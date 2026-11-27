@@ -375,6 +375,52 @@ impl Job {
         self.dir.join("frames")
     }
 
+    /// The voice each of a tale's characters speaks in, `(name, voice id)`:
+    /// picked once from the ElevenLabs account's voices by how they look
+    /// (`providers::pick_voices`), never the narrator's, and kept with the
+    /// job, so a run carried on keeps them. None when the voices cannot
+    /// be listed: the narrator reads everything.
+    fn cast_voices(&self, board: &Storyboard, key: &str, narrator: &str) -> Vec<(String, String)> {
+        let file = self.dir.join("cast-voices.json");
+        if let Some(kept) = std::fs::read(&file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Vec<(String, String)>>(&bytes).ok())
+            .filter(|kept| !kept.is_empty())
+        {
+            return kept;
+        }
+        let cast: Vec<(String, String)> = board
+            .style
+            .cast
+            .iter()
+            .map(|one| (one.name.clone(), one.look.clone()))
+            .collect();
+        if cast.is_empty() {
+            return Vec::new();
+        }
+        let voices = match providers::retry(|| providers::elevenlabs_voices(key)) {
+            Ok(voices) => voices,
+            Err(error) => {
+                log::warn!("tale: the voices could not be listed ({error}); one voice reads all");
+                return Vec::new();
+            }
+        };
+        let picked = providers::pick_voices(&cast, &voices, narrator);
+        for (name, voice) in &picked {
+            let called = voices
+                .iter()
+                .find(|one| one.id == *voice)
+                .map_or("", |one| one.name.as_str());
+            log::info!("tale: {name} speaks in {called}");
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(&picked)
+            && let Err(error) = std::fs::write(&file, bytes)
+        {
+            log::warn!("tale: the voices could not be kept: {error}");
+        }
+        picked
+    }
+
     /// Where a tale's character portraits are kept: drawn once, every shot
     /// of the character drawn from theirs.
     pub fn characters_dir(&self) -> PathBuf {
@@ -620,6 +666,14 @@ impl Job {
                 n.and_then(|n| spoken.get(n))
                     .map_or("", |scene| scene.spoken())
             };
+            // A tale's characters speak their own lines, each in a voice
+            // of their own; the narrator reads the rest.
+            let cast_voices = if board.portraits && !todo.is_empty() {
+                self.cast_voices(board, key, voice_id)
+            } else {
+                Vec::new()
+            };
+            let names: Vec<String> = cast_voices.iter().map(|(name, _)| name.clone()).collect();
             for lines in todo.chunks(VOICES_AT_ONCE) {
                 if stop() {
                     return Err("cancelled".to_owned());
@@ -635,8 +689,8 @@ impl Job {
                     let readers: Vec<_> = lines
                         .iter()
                         .map(|&i| {
-                            let (spend, voice_dir, around, spoken) =
-                                (&spend, &voice_dir, &around, &spoken);
+                            let (spend, voice_dir, around, spoken, cast_voices, names) =
+                                (&spend, &voice_dir, &around, &spoken, &cast_voices, &names);
                             scope.spawn(move || {
                                 let scene = spoken[i];
                                 // Marked for the voice where it was: the
@@ -646,17 +700,40 @@ impl Job {
                                 let text = providers::pronounced(scene.spoken(), lexicon);
                                 let cost =
                                     text.chars().count() as f64 / 1000.0 * prices.voice_per_1k;
+                                // Who reads what: the narrator alone, or
+                                // the narrator and the characters' lines.
+                                let parts: Vec<(String, String)> =
+                                    providers::dialogue_parts(&text, names)
+                                        .into_iter()
+                                        .map(|(who, said)| {
+                                            let voice = who
+                                                .and_then(|who| {
+                                                    cast_voices
+                                                        .iter()
+                                                        .find(|(name, _)| *name == who)
+                                                        .map(|(_, voice)| voice.clone())
+                                                })
+                                                .unwrap_or_else(|| voice_id.clone());
+                                            (voice, said)
+                                        })
+                                        .collect();
+                                let voiced = parts.iter().any(|(voice, _)| voice != voice_id);
+                                let out = voice_dir.join(format!("{}.mp3", scene.id));
                                 let read = |model: &str| {
                                     providers::retry(|| {
-                                        providers::elevenlabs(
-                                            key,
-                                            voice_id,
-                                            model,
-                                            &text,
-                                            around(i.checked_sub(1)),
-                                            around(Some(i + 1)),
-                                            &voice_dir.join(format!("{}.mp3", scene.id)),
-                                        )
+                                        if voiced {
+                                            providers::elevenlabs_parts(key, model, &parts, &out)
+                                        } else {
+                                            providers::elevenlabs(
+                                                key,
+                                                voice_id,
+                                                model,
+                                                &text,
+                                                around(i.checked_sub(1)),
+                                                around(Some(i + 1)),
+                                                &out,
+                                            )
+                                        }
                                     })
                                 };
                                 let words = spend.take(cost).and_then(|()| {
