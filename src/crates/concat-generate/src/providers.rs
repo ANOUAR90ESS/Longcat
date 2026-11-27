@@ -1121,12 +1121,12 @@ pub fn dialogue_parts(text: &str, names: &[String]) -> Vec<(Option<String>, Stri
     let mut quotes: Vec<(usize, usize)> = Vec::new();
     let mut at = 0;
     while at < chars.len() {
-        if opens(chars[at]) {
-            if let Some(end) = (at + 1..chars.len()).find(|&j| closes(chars[at], chars[j])) {
-                quotes.push((at, end));
-                at = end + 1;
-                continue;
-            }
+        if opens(chars[at])
+            && let Some(end) = (at + 1..chars.len()).find(|&j| closes(chars[at], chars[j]))
+        {
+            quotes.push((at, end));
+            at = end + 1;
+            continue;
         }
         at += 1;
     }
