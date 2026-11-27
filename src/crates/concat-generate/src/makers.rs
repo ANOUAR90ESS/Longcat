@@ -463,7 +463,7 @@ fn openai_edit(
     let (boundary, body) = multipart(
         &[
             ("model", model),
-            ("prompt", &prompt),
+            ("prompt", prompt),
             ("size", openai_size(aspect)),
             ("quality", "high"),
             ("n", "1"),
