@@ -49,6 +49,21 @@ pub struct Calendar {
     /// format, nor this one the others.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub machines: bool,
+    /// Planned as tales ("A tale"), each titled by the story's idea.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub tales: bool,
+}
+
+/// What a plan's videos are: as a channel's format makes them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Kind {
+    /// Long videos, each a question, story or claim.
+    #[default]
+    Videos,
+    /// Machines to build ("What are we building?"), each by its name.
+    Machines,
+    /// Made-up tales ("A tale"), each by its idea in a line.
+    Tales,
 }
 
 impl Calendar {
@@ -116,15 +131,10 @@ const SYSTEM: &str = "You plan the next month of a YouTube channel of narrated, 
     something of its own.";
 
 /// The prompt for `count` videos for the channel `channel` describes, in
-/// `language`, none like `made`; with `machines`, each video is a machine
-/// to build ("What are we building?"), named and nothing more.
-pub fn prompt(
-    channel: &str,
-    language: &str,
-    made: &[String],
-    count: usize,
-    machines: bool,
-) -> String {
+/// `language`, none like `made`, of the `kind` the channel makes: machines
+/// to build ("What are we building?") by their names alone, tales by their
+/// idea in a line, other videos by their titles.
+pub fn prompt(channel: &str, language: &str, made: &[String], count: usize, kind: Kind) -> String {
     let mut prompt = format!(
         "The channel, as its owner describes it:\n{}\nLanguage of the channel: {language}\n",
         channel.trim()
@@ -132,22 +142,30 @@ pub fn prompt(
     if !made.is_empty() {
         prompt += &format!("Already made - nothing like these: {}\n", made.join("; "));
     }
-    prompt += &if machines {
-        format!(
+    prompt += &match kind {
+        Kind::Machines => format!(
             "\nEvery video of this channel builds one machine or object in front of the viewer, \
              part by part, from something silly, and names it only at the end. Plan its next \
              {count}, in the order they go up, the first the one most people use without knowing \
              how it works. For each: as the title, only the machine's name, in {language} (a \
              submarine, an electric razor, a lift) - never a sentence; and, in one sentence, the \
              surprise in how it works, in {language}. No two in a row from the same field."
-        )
-    } else {
-        format!(
+        ),
+        Kind::Tales => format!(
+            "\nEvery video of this channel is a made-up tale told with pictures, with characters \
+             who come back. Plan its next {count}, in the order they go up, the first the one \
+             most likely to be watched to the end. For each: as the title, the tale's idea in \
+             one line of at most twelve words, in {language} ('A lonely robot finds a cat in the \
+             rain') - a hero, what they want, what is odd or at stake; and, in one sentence, the \
+             feeling or the turn that makes it worth watching, in {language}. Mix adventure, \
+             funny, warm and mysterious; no two in a row alike."
+        ),
+        Kind::Videos => format!(
             "\nPlan its next {count} long videos, in the order they go up, the first the most \
              likely to be found and watched to the end. Each a specific question, story or claim, \
              never a broad subject; no two in a row alike in subject or angle. For each: a title of \
              at most ten words and, in one sentence, why a viewer clicks - both in {language}."
-        )
+        ),
     };
     prompt
 }
@@ -208,20 +226,21 @@ pub fn of_answer(got: &Value, made: &[String], count: usize) -> Calendar {
             })
             .collect(),
         machines: false,
+        tales: false,
     }
 }
 
 /// A plan of `per_week` long videos a week over [`DAYS`] for the channel
 /// `channel` describes, in `language`, none like `made`, asked of the
 /// writer (`key`, `model`).
-/// With `machines`, each video is a machine to build; see [`prompt`].
+/// Of the `kind` the channel makes; see [`prompt`].
 #[allow(clippy::too_many_arguments)]
 pub fn plan(
     channel: &str,
     language: &str,
     made: &[String],
     per_week: u32,
-    machines: bool,
+    kind: Kind,
     key: &str,
     model: &str,
 ) -> Result<Calendar, String> {
@@ -232,12 +251,13 @@ pub fn plan(
         return Err("the channel has no name or description to plan for".to_owned());
     }
     let count = Calendar::count_for(per_week);
-    let prompt = prompt(channel, language, made, count, machines);
+    let prompt = prompt(channel, language, made, count, kind);
     let got = crate::providers::retry(|| {
         crate::writer::call_as(key, model, SYSTEM, &[], &tool(), &prompt, &[])
     })?;
     let mut calendar = of_answer(&got, made, count);
-    calendar.machines = machines;
+    calendar.machines = kind == Kind::Machines;
+    calendar.tales = kind == Kind::Tales;
     if calendar.entries.is_empty() {
         return Err("the writer planned no videos".to_owned());
     }
@@ -284,9 +304,12 @@ mod tests {
     /// for titles.
     #[test]
     fn a_plan_of_machines_asks_for_names() {
-        let machines = prompt("A channel", "English", &[], 5, true);
+        let machines = prompt("A channel", "English", &[], 5, Kind::Machines);
         assert!(machines.contains("only the machine's name"));
-        let videos = prompt("A channel", "English", &[], 5, false);
+        let tales = prompt("A channel", "Spanish", &[], 5, Kind::Tales);
+        assert!(tales.contains("the tale's idea in one line"));
+        assert!(!tales.contains("machine's name"));
+        let videos = prompt("A channel", "English", &[], 5, Kind::Videos);
         assert!(videos.contains("a title of at most ten words"));
         assert!(!videos.contains("machine's name"));
     }
@@ -309,6 +332,7 @@ mod tests {
                 },
             ],
             machines: true,
+            tales: false,
         };
         assert!(plan.mark_made(" One "));
         assert!(!plan.mark_made("Three"));

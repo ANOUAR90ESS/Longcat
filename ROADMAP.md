@@ -751,8 +751,12 @@ long. One pull request and one release for the four stages.
   parts are read one after another and joined into the scene's narration,
   its words timed from the start (`providers::elevenlabs_parts`). The
   writer quotes every line, in Spanish too, never with dashes.
-- D. **Joined up**: a channel of tales has its month planned as story
-  ideas; checks; one release.
+- D. **Joined up** - done. A channel whose format is "A tale" has its
+  month planned as tales: each title the story's idea in a line, its
+  angle the feeling or turn worth watching, adventure, funny, warm and
+  mysterious mixed (`calendar::Kind::Tales`). A plan made for another
+  kind of format says so and is planned again before any of it is made,
+  as for machines. One release for the four stages.
 
 ## The picture check, and closing on Android (owner, 26 Nov)
 
